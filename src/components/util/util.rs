@@ -5,7 +5,6 @@
 #![crate_name = "util"]
 #![crate_type = "rlib"]
 
-
 #![feature(macro_rules,unsafe_destructor)]
 
 #![feature(phase)]
@@ -43,5 +42,6 @@ pub mod sort;
 pub mod str;
 pub mod task;
 pub mod time;
+pub mod tiny_bloom;
 pub mod vec;
 pub mod workqueue;
