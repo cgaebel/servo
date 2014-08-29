@@ -5,10 +5,11 @@
 //! Traits that nodes must implement. Breaks the otherwise-cyclic dependency between layout and
 //! style.
 
+use std::cell::Cell;
 use selectors::AttrSelector;
 use servo_util::atom::Atom;
 use servo_util::namespace::Namespace;
-
+use servo_util::tiny_bloom::TinyBloomFilter;
 
 pub trait TNode<E:TElement> : Clone {
     fn parent_node(&self) -> Option<Self>;
@@ -19,6 +20,7 @@ pub trait TNode<E:TElement> : Clone {
     fn as_element(&self) -> E;
     fn match_attr(&self, attr: &AttrSelector, test: |&str| -> bool) -> bool;
     fn is_html_element_in_html_document(&self) -> bool;
+    fn get_selector_bf(&self) -> &Cell<TinyBloomFilter>;
 }
 
 pub trait TElement {
@@ -31,4 +33,3 @@ pub trait TElement {
     fn get_disabled_state(&self) -> bool;
     fn get_enabled_state(&self) -> bool;
 }
-

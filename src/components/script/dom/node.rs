@@ -22,7 +22,7 @@ use dom::bindings::global::{GlobalRef, Window};
 use dom::bindings::js::{JS, JSRef, RootedReference, Temporary, Root, OptionalUnrootable};
 use dom::bindings::js::{OptionalSettable, TemporaryPushable, OptionalRootedRootable};
 use dom::bindings::js::{ResultRootable, OptionalRootable};
-use dom::bindings::trace::Traceable;
+use dom::bindings::trace::{Traceable,Untraceable};
 use dom::bindings::utils;
 use dom::bindings::utils::{Reflectable, Reflector, reflect_dom_object};
 use dom::characterdata::CharacterData;
@@ -47,6 +47,7 @@ use layout_interface::{ContentBoxQuery, ContentBoxResponse, ContentBoxesQuery, C
                        LayoutChan, ReapLayoutDataMsg, TrustedNodeAddress, UntrustedNodeAddress};
 use servo_util::geometry::Au;
 use servo_util::str::{DOMString, null_str_as_empty};
+use servo_util::tiny_bloom::TinyBloomFilter;
 use style::{parse_selector_list_from_str, matches};
 
 use js::jsapi::{JSContext, JSObject, JSRuntime};
@@ -104,6 +105,10 @@ pub struct Node {
     /// Must be sent back to the layout task to be destroyed when this
     /// node is finalized.
     pub layout_data: LayoutDataRef,
+
+    /// The bloom filter used for quickly determining whether this node or any
+    /// of its descendants match a given css selector.
+    pub selector_bf: Untraceable<Cell<TinyBloomFilter>>,
 }
 
 impl<S: Encoder<E>, E> Encodable<S, E> for LayoutDataRef {
@@ -983,6 +988,7 @@ impl Node {
             flags: Traceable::new(RefCell::new(NodeFlags::new(type_id))),
 
             layout_data: LayoutDataRef::new(),
+            selector_bf: Untraceable::new(Cell::new(TinyBloomFilter::new())),
         }
     }
 
@@ -2023,6 +2029,10 @@ impl<'a> style::TNode<JSRef<'a, Element>> for JSRef<'a, Node> {
         assert!(elem.is_some());
         let elem: &ElementHelpers = elem.unwrap() as &ElementHelpers;
         elem.html_element_in_html_document()
+    }
+
+    fn get_selector_bf(&self) -> &Cell<TinyBloomFilter> {
+        self.selector_bf.deref()
     }
 }
 

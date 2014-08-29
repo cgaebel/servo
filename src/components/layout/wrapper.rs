@@ -51,7 +51,8 @@ use servo_util::atom::Atom;
 use servo_util::namespace::Namespace;
 use servo_util::namespace;
 use servo_util::str::is_whitespace;
-use std::cell::{RefCell, Ref, RefMut};
+use servo_util::tiny_bloom::TinyBloomFilter;
+use std::cell::{Cell, RefCell, Ref, RefMut};
 use std::kinds::marker::ContravariantLifetime;
 use std::mem;
 use style::computed_values::{content, display, white_space};
@@ -288,6 +289,12 @@ impl<'ln> TNode<LayoutElement<'ln>> for LayoutNode<'ln> {
                 let element: JS<Element> = self.node.transmute_copy();
                 element.html_element_in_html_document_for_layout()
             }
+        }
+    }
+
+    fn get_selector_bf(&self) -> &Cell<TinyBloomFilter> {
+        unsafe {
+            self.get().selector_bf.deref()
         }
     }
 }
