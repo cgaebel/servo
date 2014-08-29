@@ -17,18 +17,21 @@ impl TinyBloomFilter {
         }
     }
 
+    #[inline(always)]
     pub fn probe_sequence(hash: u64) -> [uint, ..2] {
         [  hash        as uint & 0x1Fu
         , (hash >> 5u) as uint & 0x1Fu
         ]
     }
 
+    #[inline(always)]
     pub fn insert_hashed(&mut self, hash: u64) {
         for &off in TinyBloomFilter::probe_sequence(hash).iter() {
             self.bits |= 1u32 << off;
         }
     }
 
+    #[inline(always)]
     pub fn may_include_hashed(&self, hash: u64) -> bool {
         let mut ret = true;
 
@@ -44,18 +47,29 @@ impl TinyBloomFilter {
     // TODO(cgaebel): SipHash is a little heavyweight. maybe we want something
     // lighter?
 
+    #[inline]
     pub fn insert<T: Hash>(&mut self, t: &T) {
         self.insert_hashed(hash(t));
     }
 
+    #[inline]
     pub fn definitely_excludes<T: Hash>(&self, t: &T) -> bool {
         !self.may_include(t)
     }
 
+    #[inline]
     pub fn may_include<T: Hash>(&self, t: &T) -> bool {
         self.may_include_hashed(hash(t))
     }
 
+    #[inline(always)]
+    pub fn union(&self, other: &TinyBloomFilter) -> TinyBloomFilter {
+        TinyBloomFilter {
+            bits: self.bits | other.bits
+        }
+    }
+
+    #[inline(always)]
     pub fn clear(&mut self) {
         self.bits = 0u32;
     }
