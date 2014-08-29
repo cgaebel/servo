@@ -55,6 +55,10 @@ impl TinyBloomFilter {
     pub fn may_include<T: Hash>(&self, t: &T) -> bool {
         self.may_include_hashed(hash(t))
     }
+
+    pub fn clear(&mut self) {
+        self.bits = 0u32;
+    }
 }
 
 #[test]
