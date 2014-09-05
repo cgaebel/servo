@@ -655,10 +655,6 @@ fn can_fast_reject<E: TElement, N: TNode<E>>(
                 },
                 _ => {},
             }
-
-            if bf.definitely_excludes(ss) {
-                return Some(NotMatchedGlobally);
-            }
         }
 
     }
