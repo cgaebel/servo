@@ -6,7 +6,7 @@
 #![crate_type = "rlib"]
 
 
-#![feature(macro_rules,unsafe_destructor)]
+#![feature(default_type_params,macro_rules,unsafe_destructor)]
 
 #![feature(phase)]
 #[phase(plugin, link)]
@@ -34,6 +34,7 @@ pub mod atom;
 pub mod bloom;
 pub mod cache;
 pub mod debug_utils;
+pub mod fnv;
 pub mod geometry;
 pub mod logical_geometry;
 pub mod memory;

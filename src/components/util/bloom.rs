@@ -6,11 +6,14 @@
 
 extern crate rand;
 
+use fnv::{FnvState, hash};
 use rand::Rng;
-use std::hash::{hash,Hash};
+use std::hash::Hash;
 use std::iter;
 use std::num;
 use std::uint;
+
+// Just a quick and dirty xxhash embedding.
 
 /// A counting bloom filter.
 ///
@@ -169,7 +172,7 @@ impl BloomFilter {
     /// Inserts a value into the bloom filter. Note that the bloom filter isn't
     /// parameterized over the values it holds. That's because it can hold
     /// values of different types, as long as it can get a hash out of them.
-    pub fn insert<H: Hash>(&mut self, h: &H) {
+    pub fn insert<H: Hash<FnvState>>(&mut self, h: &H) {
         self.insert_hashed(hash(h))
     }
 
@@ -206,7 +209,7 @@ impl BloomFilter {
     /// long intervals.
     ///
     /// It is an error to remove never-inserted elements.
-    pub fn remove<H: Hash>(&mut self, h: &H) {
+    pub fn remove<H: Hash<FnvState>>(&mut self, h: &H) {
         self.remove_hashed(hash(h))
     }
 
@@ -232,14 +235,14 @@ impl BloomFilter {
 
     /// A bloom filter can tell you whether or not a value has definitely never
     /// been inserted. Note that bloom filters can give false positives.
-    pub fn definitely_excludes<H: Hash>(&self, h: &H) -> bool {
+    pub fn definitely_excludes<H: Hash<FnvState>>(&self, h: &H) -> bool {
         self.definitely_excludes_hashed(hash(h))
     }
 
     /// A bloom filter can tell you if an element /may/ be in it. It cannot be
     /// certain. But, assuming correct usage, this query will have a low false
     /// positive rate.
-    pub fn may_include<H: Hash>(&self, h: &H) -> bool {
+    pub fn may_include<H: Hash<FnvState>>(&self, h: &H) -> bool {
         !self.definitely_excludes(h)
     }
 
