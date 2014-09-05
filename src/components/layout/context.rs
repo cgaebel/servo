@@ -18,7 +18,7 @@ use servo_util::opts::Opts;
 use sync::{Arc, Mutex};
 use std::collections::hashmap::HashSet;
 use std::mem;
-use style::{Stylist,SimpleSelector};
+use style::{SimpleSelector, Stylist};
 use url::Url;
 
 struct LocalLayoutContext {

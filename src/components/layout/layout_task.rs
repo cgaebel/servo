@@ -649,12 +649,12 @@ impl LayoutTask {
         self.screen_size = current_screen_size;
 
         // TODO(cgaebel): Instead of counting the max dom selectors, maybe just
-        // use a 1 MB bloom filter? Or use d-left hasing to allow one that grows
+        // use a 1 MB bloom filter? Or use d-left hashing to allow one that grows
         // dynamically?
         let (max_dom_node_selectors, descendant_simple_selectors) =
             profile(time::LayoutMaxSelectorMatchesCategory,
                     self.time_profiler_chan.clone(),
-                    // TODO(cagebel): Parallelize this traversal.
+                    // TODO(cgaebel): Parallelize this traversal.
                     || self.stylist.max_selector_matches(node));
 
         // Create a layout context for use throughout the following passes.

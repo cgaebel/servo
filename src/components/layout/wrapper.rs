@@ -231,7 +231,7 @@ impl<'ln> TNode<LayoutElement<'ln>> for LayoutNode<'ln> {
         }
     }
 
-    fn first_child(&self) -> Option<LayoutNode<'ln>> {
+    fn tnode_first_child(&self) -> Option<LayoutNode<'ln>> {
         unsafe {
             self.node.first_child_ref().map(|node| self.new_with_this_lifetime(&node))
         }

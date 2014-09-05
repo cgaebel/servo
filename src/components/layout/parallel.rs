@@ -215,7 +215,7 @@ impl<'a> ParallelPreorderFlowTraversal for AssignISizesTraversal<'a> {
 impl<'a> ParallelPostorderFlowTraversal for AssignBSizesAndStoreOverflowTraversal<'a> {}
 
 /// A pair of the bloom filter used for css selector matching, and the node to
-/// which it applies. This is used to efficiently do `Desendant` selector
+/// which it applies. This is used to efficiently do `Descendant` selector
 /// matches. Thanks to the bloom filter, we can avoid walking up the tree
 /// looking for ancestors that aren't there in the majority of cases.
 ///
@@ -260,8 +260,8 @@ fn take_task_local_bloom_filter<'ln>(
         (Some(p), None) => new_bloom(Some(p)),
         // Found cached bloom filter.
         (Some(p), Some((bf, old_node))) => {
-            // Heey, the cached parent is our parent! We can reused the bloom
-            // filter!
+            // Hey, the cached parent is our parent! We can reuse the bloom
+            // filter.
             if old_node == layout_node_to_unsafe_layout_node(&p) {
                 bf
             // Oh no. the cached parent is stale. I guess we need a new one...
