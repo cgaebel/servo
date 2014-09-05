@@ -279,15 +279,6 @@ pub enum StyleSharingResult<'ln> {
 }
 
 pub trait MatchMethods {
-    /// A "really simple selector" is just a selector that can be trivially
-    /// turned into string comparison.
-    ///
-    /// In terms of `SimpleSelector`s, this will take care of:
-    ///   - `LocalNameSelector`
-    ///   - `NamepaceSelector`
-    ///   - `IDSelector`
-    ///   - `ClassSelector`
-
     /// Inserts and removes the matching `Child` selectors from a bloom filter.
     /// This is used to speed up CSS selector matching to remove unnecessary
     /// tree climbs for `Child` queries.
