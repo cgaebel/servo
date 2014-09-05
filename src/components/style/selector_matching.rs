@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::collections::hashmap::{HashMap,HashSet};
+use std::collections::hashmap::HashMap;
 use std::hash::Hash;
 use std::num::div_rem;
 use sync::Arc;
@@ -403,64 +403,6 @@ impl Stylist {
                                                         &mut shareable);
 
         shareable
-    }
-
-    /// Pushes all the simple selectors with a descendant (space) to their right.
-    fn push_rule<'a>(src: &'a Rule, dst: &mut HashSet<&'a SimpleSelector>) {
-        let mut selector: &CompoundSelector = src.selector.deref();
-
-        loop {
-            match selector.next {
-                None => break,
-                Some((ref to_the_left, Descendant)) => {
-                    dst.extend(to_the_left.simple_selectors.iter());
-                    selector = &**to_the_left;
-                },
-                // non-descendant selectors
-                Some((ref to_the_left, _)) => {
-                    selector = &**to_the_left;
-                },
-            }
-        }
-    }
-
-    /// For the css selection bloom filter, we need to get an estimate of the
-    /// matching descendant simple selector in the tree. This function will
-    /// return a set of them.
-    pub fn descendant_simple_selectors<'a>(&'a self) -> HashSet<&'a SimpleSelector> {
-        let mut ret = HashSet::new();
-
-        for &element_selector_map in
-            [ &self.element_map
-            , &self.before_map
-            , &self.after_map
-            ].iter() {
-            for origin_selector_map in
-                [ &element_selector_map.user_agent
-                , &element_selector_map.author
-                , &element_selector_map.user
-                ].iter() {
-                for selector_map in
-                    [ &origin_selector_map.normal
-                    , &origin_selector_map.important
-                    ].iter() {
-                    for rules in
-                        selector_map.id_hash.values()
-                        .chain(selector_map.class_hash.values())
-                        .chain(selector_map.local_name_hash.values())
-                        .chain(selector_map.lower_local_name_hash.values()) {
-                        for rule in rules.iter() {
-                            Stylist::push_rule(rule, &mut ret);
-                        }
-                    }
-                    for rule in selector_map.universal_rules.iter() {
-                        Stylist::push_rule(rule, &mut ret);
-                    }
-                }
-            }
-        }
-
-        ret
     }
 }
 
