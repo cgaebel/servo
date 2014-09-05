@@ -222,6 +222,7 @@ impl BloomFilter {
     fn definitely_excludes_hashed(&self, hash: u64) -> bool {
         let mut ret = false;
 
+        // Doing `.any` is slower than this branch-free version.
         for shash in stretch(&mut to_rng(hash)) {
             ret |= self.definitely_excludes_shash(shash);
         }
@@ -237,7 +238,7 @@ impl BloomFilter {
 
     /// A bloom filter can tell you if an element /may/ be in it. It cannot be
     /// certain. But, assuming correct usage, this query will have a low false
-    // positive rate.
+    /// positive rate.
     pub fn may_include<H: Hash>(&self, h: &H) -> bool {
         !self.definitely_excludes(h)
     }

@@ -27,6 +27,7 @@ use servo_util::workqueue::{WorkQueue, WorkUnit, WorkerProxy};
 use std::mem;
 use std::ptr;
 use std::sync::atomics::{AtomicInt, Relaxed, SeqCst};
+use style;
 use style::TNode;
 
 #[allow(dead_code)]
@@ -241,14 +242,13 @@ local_data_key!(style_bloom: (BloomFilter, UnsafeLayoutNode))
 /// If one does not exist, a new one will be made for you. If it is out of date,
 /// it will be thrown out and a new one will be made for you.
 fn take_task_local_bloom_filter<'ln>(
-  max_dom_depth: uint,
   parent_node: Option<LayoutNode<'ln>>,
   layout_context: &LayoutContext)
       -> BloomFilter {
 
     let new_bloom =
         |p: Option<LayoutNode<'ln>>| -> BloomFilter {
-            let mut bf = BloomFilter::new(max_dom_depth);
+            let mut bf = BloomFilter::new(style::RECOMMENDED_SELECTOR_BLOOM_FILTER_SIZE);
             p.map(|p| insert_ancestors_into_bloom_filter(&mut bf, p, layout_context));
             bf
         };
@@ -284,7 +284,7 @@ fn put_task_local_bloom_filter<'ln>(bf: BloomFilter, node: &LayoutNode<'ln>) {
 fn insert_ancestors_into_bloom_filter(
   bf: &mut BloomFilter, mut n: LayoutNode, layout_context: &LayoutContext) {
     loop {
-        n.insert_into_bloom_filter(bf, layout_context);
+        n.insert_into_bloom_filter(bf);
         n = match parent_node(&n, layout_context) {
             None => return,
             Some(p) => p,
@@ -321,9 +321,7 @@ fn recalc_style_for_node(unsafe_layout_node: UnsafeLayoutNode,
     let parent_opt = parent_node(&node, &layout_context);
 
     // Get the style bloom filter.
-    let bf = take_task_local_bloom_filter(
-        layout_context.shared.max_dom_depth, parent_opt, &layout_context);
-
+    let bf = take_task_local_bloom_filter(parent_opt, &layout_context);
 
     // First, check to see whether we can share a style with someone.
     let style_sharing_candidate_cache = layout_context.style_sharing_candidate_cache();
@@ -380,7 +378,7 @@ fn recalc_style_for_node(unsafe_layout_node: UnsafeLayoutNode,
 
     // Before running the children, we need to insert our nodes into the bloom
     // filter.
-    node.insert_into_bloom_filter(&mut bf, &layout_context);
+    node.insert_into_bloom_filter(&mut bf);
 
     // It's *very* important that this block is in a separate scope to the block above,
     // to avoid a data race that can occur (github issue #2308). The block above issues
@@ -438,7 +436,7 @@ fn construct_flows<'a>(mut unsafe_layout_node: UnsafeLayoutNode,
 
         // The bloom filter needs to remove all the selectors added by a node
         // while it constructs its flow, so it matches the current "parent" node.
-        node.remove_from_bloom_filter(parent_bf, layout_context);
+        node.remove_from_bloom_filter(parent_bf);
 
         // If this is the reflow root, we're done.
         let opaque_node: OpaqueNode = OpaqueNodeMethods::from_layout_node(&node);

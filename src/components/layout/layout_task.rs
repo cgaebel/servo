@@ -54,11 +54,11 @@ use servo_util::time::{TimeProfilerChan, profile};
 use servo_util::time;
 use servo_util::task::spawn_named_with_send_on_failure;
 use servo_util::workqueue::WorkQueue;
-use std::collections::hashmap::HashSet;
 use std::comm::{channel, Sender, Receiver, Select};
 use std::mem;
 use std::ptr;
-use style::{AuthorOrigin, Stylesheet, Stylist, SimpleSelector};
+use style;
+use style::{AuthorOrigin, Stylesheet, Stylist};
 use style::iter_font_face_rules;
 use sync::{Arc, Mutex};
 use url::Url;
@@ -368,8 +368,6 @@ impl LayoutTask {
     fn build_shared_layout_context(
       &self,
       reflow_root: &LayoutNode,
-      max_dom_depth: uint,
-      descendant_simple_selectors: HashSet<&'static SimpleSelector>,
       url: &Url)
           -> SharedLayoutContext {
         SharedLayoutContext {
@@ -379,8 +377,6 @@ impl LayoutTask {
             layout_chan: self.chan.clone(),
             font_cache_task: self.font_cache_task.clone(),
             stylist: &*self.stylist,
-            max_dom_depth: max_dom_depth,
-            descendant_simple_selectors: descendant_simple_selectors,
             url: (*url).clone(),
             reflow_root: OpaqueNodeMethods::from_layout_node(reflow_root),
             opts: self.opts.clone(),
@@ -648,21 +644,10 @@ impl LayoutTask {
         }
         self.screen_size = current_screen_size;
 
-        // TODO(cgaebel): Instead of counting the max dom selectors, maybe just
-        // use a 1 MB bloom filter? Or use d-left hashing to allow one that grows
-        // dynamically?
-        let (max_dom_node_selectors, descendant_simple_selectors) =
-            profile(time::LayoutMaxSelectorMatchesCategory,
-                    self.time_profiler_chan.clone(),
-                    // TODO(cgaebel): Parallelize this traversal.
-                    || self.stylist.max_selector_matches(node));
-
         // Create a layout context for use throughout the following passes.
         let mut shared_layout_ctx =
             self.build_shared_layout_context(
                 node,
-                max_dom_node_selectors,
-                descendant_simple_selectors,
                 &data.url);
 
         let mut layout_root = profile(time::LayoutStyleRecalcCategory,
@@ -673,9 +658,11 @@ impl LayoutTask {
                 None => {
                     let layout_ctx = LayoutContext::new(&shared_layout_ctx);
                     let mut applicable_declarations = ApplicableDeclarations::new();
+                    let mut parent_bf = Some(BloomFilter::new(
+                        style::RECOMMENDED_SELECTOR_BLOOM_FILTER_SIZE));
                     node.recalc_style_for_subtree(&*self.stylist,
                                                    &layout_ctx,
-                                                   &mut Some(BloomFilter::new(max_dom_node_selectors)),
+                                                   &mut parent_bf,
                                                    &mut applicable_declarations,
                                                    None)
                 }

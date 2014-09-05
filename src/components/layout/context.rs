@@ -16,9 +16,8 @@ use servo_net::local_image_cache::LocalImageCache;
 use servo_util::geometry::Au;
 use servo_util::opts::Opts;
 use sync::{Arc, Mutex};
-use std::collections::hashmap::HashSet;
 use std::mem;
-use style::{SimpleSelector, Stylist};
+use style::Stylist;
 use url::Url;
 
 struct LocalLayoutContext {
@@ -71,14 +70,6 @@ pub struct SharedLayoutContext {
 
     /// The root node at which we're starting the layout.
     pub reflow_root: OpaqueNode,
-
-    /// The maximum depth of the DOM tree, to help size the CSS bloom filter
-    /// properly.
-    pub max_dom_depth: uint,
-
-    /// These references will be valid only during layout, but adding a lifetime
-    /// parameter to this struct caused me all kinds of headaches.
-    pub descendant_simple_selectors: HashSet<&'static SimpleSelector>,
 
     /// The URL.
     pub url: Url,

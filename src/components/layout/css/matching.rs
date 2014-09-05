@@ -20,8 +20,9 @@ use servo_util::str::DOMString;
 use std::mem;
 use std::hash::{Hash, sip};
 use std::slice::Items;
+use style;
 use style::{After, Before, ComputedValues, DeclarationBlock, Stylist, TElement, TNode};
-use style::{matches_simple_selector, cascade};
+use style::cascade;
 use sync::Arc;
 
 pub struct ApplicableDeclarations {
@@ -278,6 +279,15 @@ pub enum StyleSharingResult<'ln> {
 }
 
 pub trait MatchMethods {
+    /// A "really simple selector" is just a selector that can be trivially
+    /// turned into string comparison.
+    ///
+    /// In terms of `SimpleSelector`s, this will take care of:
+    ///   - `LocalNameSelector`
+    ///   - `NamepaceSelector`
+    ///   - `IDSelector`
+    ///   - `ClassSelector`
+
     /// Inserts and removes the matching `Child` selectors from a bloom filter.
     /// This is used to speed up CSS selector matching to remove unnecessary
     /// tree climbs for `Child` queries.
@@ -285,11 +295,11 @@ pub trait MatchMethods {
     /// A bloom filter of the matches of _parents_ is kept. Therefore, each node
     /// must have its matching selectors inserted _after_ its own selector
     /// matching and _before_ its children start.
-    fn insert_into_bloom_filter(&self, bf: &mut BloomFilter, ctx: &LayoutContext);
+    fn insert_into_bloom_filter(&self, bf: &mut BloomFilter);
 
     /// After all the children are done css selector matching, this must be
     /// called to reset the bloom filter after an `insert`.
-    fn remove_from_bloom_filter(&self, bf: &mut BloomFilter, ctx: &LayoutContext);
+    fn remove_from_bloom_filter(&self, bf: &mut BloomFilter);
 
     /// Performs aux initialization, selector matching, cascading, and flow construction
     /// sequentially.
@@ -474,28 +484,57 @@ impl<'ln> MatchMethods for LayoutNode<'ln> {
         CannotShare(true)
     }
 
-    fn insert_into_bloom_filter(&self, bf: &mut BloomFilter, ctx: &LayoutContext) {
-        // Only elements may be inserted.
-        if !self.is_element() { return; }
+    // The below two functions are copy+paste because I can't figure out how to
+    // write a function which takes a generic function. I don't think it can
+    // be done.
+    //
+    // Ideally, I'd want something like:
+    //
+    //   > fn with_really_simple_selectors(&self, f: <H: Hash>|&H|);
 
-        let mut _shareable = false;
-        for selector in ctx.shared.descendant_simple_selectors.iter() {
-            if matches_simple_selector(*selector, self, &mut _shareable) {
-                bf.insert(*selector);
-            }
-        }
+
+    // In terms of `SimpleSelector`s, these two functions will insert and remove:
+    //   - `LocalNameSelector`
+    //   - `NamepaceSelector`
+    //   - `IDSelector`
+    //   - `ClassSelector`
+
+    fn insert_into_bloom_filter(&self, bf: &mut BloomFilter) {
+        // Only elements are interesting.
+        if !self.is_element() { return; }
+        let element = self.as_element();
+
+        bf.insert(element.get_local_name());
+        bf.insert(element.get_namespace());
+        element.get_id().map(|id| bf.insert(&id));
+
+        // TODO: case-sensitivity depends on the document type and quirks mode
+        element
+            .get_attr(&Null, "class")
+            .map(|attr| {
+                for c in attr.split(style::SELECTOR_WHITESPACE) {
+                    bf.insert(&c);
+                }
+            });
     }
 
-    fn remove_from_bloom_filter(&self, bf: &mut BloomFilter, ctx: &LayoutContext) {
-        // Only elements may be inserted.
+    fn remove_from_bloom_filter(&self, bf: &mut BloomFilter) {
+        // Only elements are interesting.
         if !self.is_element() { return; }
+        let element = self.as_element();
 
-        let mut _shareable = false;
-        for selector in ctx.shared.descendant_simple_selectors.iter() {
-            if matches_simple_selector(*selector, self, &mut _shareable) {
-                bf.remove(*selector);
-            }
-        }
+        bf.remove(element.get_local_name());
+        bf.remove(element.get_namespace());
+        element.get_id().map(|id| bf.remove(&id));
+
+        // TODO: case-sensitivity depends on the document type and quirks mode
+        element
+            .get_attr(&Null, "class")
+            .map(|attr| {
+                for c in attr.split(style::SELECTOR_WHITESPACE) {
+                    bf.remove(&c);
+                }
+            });
     }
 
     fn recalc_style_for_subtree(&self,
@@ -536,7 +575,7 @@ impl<'ln> MatchMethods for LayoutNode<'ln> {
 
         match *parent_bf {
             None => {},
-            Some(ref mut pbf) => self.insert_into_bloom_filter(pbf, layout_context),
+            Some(ref mut pbf) => self.insert_into_bloom_filter(pbf),
         }
 
         for kid in self.children() {
@@ -549,7 +588,7 @@ impl<'ln> MatchMethods for LayoutNode<'ln> {
 
         match *parent_bf {
             None => {},
-            Some(ref mut pbf) => self.remove_from_bloom_filter(pbf, layout_context),
+            Some(ref mut pbf) => self.remove_from_bloom_filter(pbf),
         }
 
         // Construct flows.

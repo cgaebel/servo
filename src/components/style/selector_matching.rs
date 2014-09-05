@@ -2,10 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::cmp;
 use std::collections::hashmap::{HashMap,HashSet};
 use std::hash::Hash;
-use std::mem;
 use std::num::div_rem;
 use sync::Arc;
 
@@ -30,7 +28,7 @@ pub enum StylesheetOrigin {
 }
 
 /// The definition of whitespace per CSS Selectors Level 3 § 4.
-static SELECTOR_WHITESPACE: &'static [char] = &[' ', '\t', '\n', '\r', '\x0C'];
+pub static SELECTOR_WHITESPACE: &'static [char] = &[' ', '\t', '\n', '\r', '\x0C'];
 
 /// Map node attributes to Rules whose last simple selector starts with them.
 ///
@@ -257,6 +255,11 @@ impl SelectorMap {
     }
 }
 
+// The bloom filter for descendant CSS selectors will have a <1% false
+// positive rate until it has this many selectors in it, then it will
+// rapidly increase.
+pub static RECOMMENDED_SELECTOR_BLOOM_FILTER_SIZE: uint = 4096;
+
 pub struct Stylist {
     element_map: PerPseudoElementSelectorMap,
     before_map: PerPseudoElementSelectorMap,
@@ -459,60 +462,6 @@ impl Stylist {
 
         ret
     }
-
-    pub fn number_of_selector_matches<E: TElement, N: TNode<E>>(
-      node: &N, selector_set: &HashSet<&SimpleSelector>) -> uint {
-        let mut _shareable = false;
-        selector_set
-            .iter()
-            .filter(|&&selector|
-                    matches_simple_selector(selector, node, &mut _shareable))
-            .count()
-    }
-
-    /// TODO(cgaebel): Do this in parallel?
-    pub fn max_selector_matches_for_node<E: TElement, N: TNode<E>>(
-      node: &N, selector_set: &HashSet<&SimpleSelector>) -> uint {
-        let mut max_of_children = 0;
-
-        let mut current_node: N =
-            match node.tnode_first_child() {
-                // ignore leaf nodes
-                None                  => return 0,
-                Some(ref first_child) => first_child.clone(),
-            };
-
-        loop {
-            max_of_children =
-                cmp::max(
-                    max_of_children,
-                    Stylist::max_selector_matches_for_node(
-                        &current_node,
-                        selector_set));
-
-            current_node =
-                match current_node.next_sibling() {
-                    None => break,
-                    Some(s) => s,
-                };
-        }
-
-        max_of_children + Stylist::number_of_selector_matches(node, selector_set)
-    }
-
-    /// The return value of this function is extremely sketchy.
-    /// The 'static lifetime on SimpleSelector is so that lifetime parameters on
-    /// `SharedLayoutContext` can be avoided.
-    pub fn max_selector_matches<E: TElement, N: TNode<E>>(&self, node: &N)
-      -> (uint, HashSet<&'static SimpleSelector>) {
-        let descendant_simple_selectors = self.descendant_simple_selectors();
-        debug!("Number of descendant simple selectors: {}, using {} kB of RAM",
-               descendant_simple_selectors.len(),
-               descendant_simple_selectors.len() * mem::size_of::<uint>() / 1024);
-        let ret = Stylist::max_selector_matches_for_node(node, &descendant_simple_selectors);
-        debug!("Max selector matches (proportional to bloom filter size): {}", ret);
-        (ret, unsafe { mem::transmute(descendant_simple_selectors) })
-    }
 }
 
 struct PerOriginSelectorMap {
@@ -669,26 +618,49 @@ fn can_fast_reject<E: TElement, N: TNode<E>>(
             Some(ref bf) => bf,
         };
 
-    // See if the bloom filter can exclude any of the child selectors, and
+    // See if the bloom filter can exclude any of the descendant selectors, and
     // reject if we can.
     loop {
-        let next: &CompoundSelector =
-            match selector.next {
-              None => break,
-              Some((ref cs, Descendant)) => &**cs,
-              Some((ref cs, _)) => {
-                  selector = &**cs;
-                  continue;
-              }
-            };
+         match selector.next {
+             None => break,
+             Some((ref cs, Descendant)) => selector = &**cs,
+             Some((ref cs, _)) => {
+                 selector = &**cs;
+                 continue;
+             }
+         };
 
         for ss in selector.simple_selectors.iter() {
+            match *ss {
+                LocalNameSelector(LocalNameSelector { ref name, ref lower_name })  => {
+                    if bf.definitely_excludes(name)
+                    && bf.definitely_excludes(lower_name) {
+                        return Some(NotMatchedGlobally);
+                    }
+                },
+                NamespaceSelector(ref namespace) => {
+                    if bf.definitely_excludes(namespace) {
+                        return Some(NotMatchedGlobally);
+                    }
+                },
+                IDSelector(ref id) => {
+                    if bf.definitely_excludes(id) {
+                        return Some(NotMatchedGlobally);
+                    }
+                },
+                ClassSelector(ref class) => {
+                    if bf.definitely_excludes(&class.as_slice()) {
+                        return Some(NotMatchedGlobally);
+                    }
+                },
+                _ => {},
+            }
+
             if bf.definitely_excludes(ss) {
                 return Some(NotMatchedGlobally);
             }
         }
 
-        selector = next;
     }
 
     // Can't fast reject.
