@@ -522,6 +522,11 @@ pub struct BlockFlow {
 }
 
 impl BlockFlow {
+    fn update_restyle_damage(mut self) -> BlockFlow {
+        self.base.restyle_damage.insert(self.fragment.restyle_damage);
+        self
+    }
+
     pub fn from_node(constructor: &mut FlowConstructor, node: &ThreadSafeLayoutNode) -> BlockFlow {
         BlockFlow {
             base: BaseFlow::new((*node).clone()),
@@ -531,7 +536,7 @@ impl BlockFlow {
             inline_size_of_preceding_left_floats: Au(0),
             inline_size_of_preceding_right_floats: Au(0),
             float: None
-        }
+        }.update_restyle_damage()
     }
 
     pub fn from_node_and_fragment(node: &ThreadSafeLayoutNode, fragment: Fragment) -> BlockFlow {
@@ -543,7 +548,7 @@ impl BlockFlow {
             inline_size_of_preceding_left_floats: Au(0),
             inline_size_of_preceding_right_floats: Au(0),
             float: None
-        }
+        }.update_restyle_damage()
     }
 
     pub fn float_from_node(constructor: &mut FlowConstructor,
@@ -559,7 +564,7 @@ impl BlockFlow {
             inline_size_of_preceding_right_floats: Au(0),
             float: Some(box FloatedBlockInfo::new(float_kind)),
             base: base,
-        }
+        }.update_restyle_damage()
     }
 
     pub fn float_from_node_and_fragment(node: &ThreadSafeLayoutNode,
@@ -575,7 +580,7 @@ impl BlockFlow {
             inline_size_of_preceding_right_floats: Au(0),
             float: Some(box FloatedBlockInfo::new(float_kind)),
             base: base,
-        }
+        }.update_restyle_damage()
     }
 
     /// Return the type of this block.
@@ -823,6 +828,7 @@ impl BlockFlow {
 
         // At this point, `cur_b` is at the content edge of our box. Now iterate over children.
         let mut floats = self.base.floats.clone();
+        debug!("at the start, there are {} floats.", floats.len());
         let mut layers_needed_for_descendants = false;
         for kid in self.base.child_iter() {
             if kid.is_absolutely_positioned() {
@@ -910,6 +916,8 @@ impl BlockFlow {
                 margin_collapse_info.advance_block_end_margin(&kid_base.collapsible_margins);
             translate_including_floats(&mut cur_b, delta, &mut floats);
         }
+
+        debug!("Done block children.");
 
         // Mark ourselves for layerization if that will be necessary to paint in the proper order
         // (CSS 2.1, Appendix E).
@@ -1337,7 +1345,7 @@ impl BlockFlow {
 
         for (i, kid) in self.base.child_iter().enumerate() {
             {
-                let mut kid_base = flow::mut_base(kid);
+                let kid_base = flow::mut_base(kid);
                 kid_base.block_container_explicit_block_size = explicit_content_size;
                 kid_base.absolute_static_i_offset = absolute_static_i_offset;
                 kid_base.fixed_static_i_offset = fixed_static_i_offset;

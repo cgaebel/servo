@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use std::fmt;
+use std::sync::Arc;
 use style::ComputedValues;
 
 bitflags! {
@@ -20,6 +22,33 @@ bitflags! {
         #[doc = "Propagates up the flow tree because the computation is"]
         #[doc = "top-down."]
         static Reflow = 0x04
+    }
+}
+
+impl fmt::Show for RestyleDamage {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::FormatError> {
+        let mut first_elem = true;
+        if self.contains(Repaint) {
+            if !first_elem { try!(write!(f, " | ")); }
+            try!(write!(f, "Repaint"));
+            first_elem = false;
+        }
+        if self.contains(BubbleISizes) {
+            if !first_elem { try!(write!(f, " | ")); }
+            try!(write!(f, "BubbleISizes"));
+            first_elem = false;
+        }
+        if self.contains(Reflow) {
+            if !first_elem { try!(write!(f, " | ")); }
+            try!(write!(f, "Reflow"));
+            first_elem = false;
+        }
+
+        if first_elem {
+            try!(write!(f, "NoDamage"));
+        }
+
+        Ok(())
     }
 }
 
@@ -43,34 +72,46 @@ macro_rules! add_if_not_equal(
      [ $($effect:ident),* ], [ $($style_struct_getter:ident.$name:ident),* ]) => ({
         if $( ($old.$style_struct_getter().$name != $new.$style_struct_getter().$name) )||* {
             $damage.insert($($effect)|*);
+            break;
         }
     })
 )
 
-pub fn compute_damage(old: &ComputedValues, new: &ComputedValues) -> RestyleDamage {
+pub fn compute_damage(old: &Option<Arc<ComputedValues>>, new: &ComputedValues) -> RestyleDamage {
+    let old: &ComputedValues =
+        match old.as_ref() {
+            None => return Repaint | BubbleISizes | Reflow,
+            Some(cv) => &**cv,
+        };
+
     let mut damage = RestyleDamage::empty();
 
     // This checks every CSS property, as enumerated in
     // impl<'self> CssComputedStyle<'self>
     // in src/support/netsurfcss/rust-netsurfcss/netsurfcss.rc.
 
-    // FIXME: We can short-circuit more of this.
+    // Loop to allow short-circuiting with `break`.
+    loop {
+        add_if_not_equal!(old, new, damage, [ Repaint ],
+            [ get_color.color, get_background.background_color,
+              get_border.border_top_color, get_border.border_right_color,
+              get_border.border_bottom_color, get_border.border_left_color ]);
+        break;
+    }
 
-    add_if_not_equal!(old, new, damage, [ Repaint ],
-        [ get_color.color, get_background.background_color,
-          get_border.border_top_color, get_border.border_right_color,
-          get_border.border_bottom_color, get_border.border_left_color ]);
-
-    add_if_not_equal!(old, new, damage, [ Repaint, BubbleISizes, Reflow ],
-        [ get_border.border_top_width, get_border.border_right_width,
-          get_border.border_bottom_width, get_border.border_left_width,
-          get_margin.margin_top, get_margin.margin_right,
-          get_margin.margin_bottom, get_margin.margin_left,
-          get_padding.padding_top, get_padding.padding_right,
-          get_padding.padding_bottom, get_padding.padding_left,
-          get_box.position, get_box.width, get_box.height, get_box.float, get_box.display,
-          get_font.font_family, get_font.font_size, get_font.font_style, get_font.font_weight,
-          get_inheritedtext.text_align, get_text.text_decoration, get_inheritedbox.line_height ]);
+    loop {
+        add_if_not_equal!(old, new, damage, [ Repaint, BubbleISizes, Reflow ],
+            [ get_border.border_top_width, get_border.border_right_width,
+              get_border.border_bottom_width, get_border.border_left_width,
+              get_margin.margin_top, get_margin.margin_right,
+              get_margin.margin_bottom, get_margin.margin_left,
+              get_padding.padding_top, get_padding.padding_right,
+              get_padding.padding_bottom, get_padding.padding_left,
+              get_box.position, get_box.width, get_box.height, get_box.float, get_box.display,
+              get_font.font_family, get_font.font_size, get_font.font_style, get_font.font_weight,
+              get_inheritedtext.text_align, get_text.text_decoration, get_inheritedbox.line_height ]);
+        break;
+    }
 
     // FIXME: test somehow that we checked every CSS property
 

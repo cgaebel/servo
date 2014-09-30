@@ -42,12 +42,12 @@ impl Formatable for Option<TimerMetadata> {
             // TODO(cgaebel): Center-align in the format strings as soon as rustc supports it.
             &Some(ref meta) => {
                 let url = meta.url.as_slice();
-                let first_reflow = if meta.first_reflow { "    yes" } else { "    no " };
+                let first_reflow = if !meta.first_reflow { "    yes" } else { "    no " };
                 let iframe = if meta.iframe { "  yes" } else { "  no " };
-                format!(" {:14} {:9} {:30}", first_reflow, iframe, url)
+                format!(" {:14} {:9} {:35}", first_reflow, iframe, url)
             },
             &None =>
-                format!(" {:14} {:9} {:30}", "    N/A", "  N/A", "             N/A")
+                format!(" {:14} {:9} {:35}", "    N/A", "  N/A", "             N/A")
         }
     }
 }
@@ -67,10 +67,11 @@ pub enum TimeProfilerMsg {
 pub enum TimeProfilerCategory {
     CompositingCategory,
     LayoutPerformCategory,
+    LayoutDirtyFlagFloodCategory,
     LayoutStyleRecalcCategory,
+    LayoutFloatDirtificationCategory,
     LayoutSelectorMatchCategory,
     LayoutTreeBuilderCategory,
-    LayoutDamagePropagateCategory,
     LayoutMainCategory,
     LayoutParallelWarmupCategory,
     LayoutShapingCategory,
@@ -88,8 +89,7 @@ impl Formatable for TimeProfilerCategory {
             LayoutStyleRecalcCategory |
             LayoutMainCategory |
             LayoutDispListBuildCategory |
-            LayoutShapingCategory |
-            LayoutDamagePropagateCategory => "+ ",
+            LayoutShapingCategory => "+ ",
             LayoutParallelWarmupCategory |
             LayoutSelectorMatchCategory |
             LayoutTreeBuilderCategory => "| + ",
@@ -98,10 +98,11 @@ impl Formatable for TimeProfilerCategory {
         let name = match *self {
             CompositingCategory => "Compositing",
             LayoutPerformCategory => "Layout",
+            LayoutDirtyFlagFloodCategory => "Dirty Flooding",
             LayoutStyleRecalcCategory => "Style Recalc",
+            LayoutFloatDirtificationCategory => "Float Dirtification",
             LayoutSelectorMatchCategory => "Selector Matching",
             LayoutTreeBuilderCategory => "Tree Building",
-            LayoutDamagePropagateCategory => "Damage Propagation",
             LayoutMainCategory => "Primary Layout Pass",
             LayoutParallelWarmupCategory => "Parallel Warmup",
             LayoutShapingCategory => "Shaping",
@@ -206,7 +207,7 @@ impl TimeProfiler {
     }
 
     fn print_buckets(&mut self) {
-        println!("{:35s} {:14} {:9} {:30} {:15s} {:15s} {:-15s} {:-15s} {:-15s}",
+        println!("{:35s} {:14} {:9} {:35} {:15s} {:15s} {:-15s} {:-15s} {:-15s}",
                  "_category_", "_incremental?_", "_iframe?_",
                  "            _url_", "    _mean (ms)_", "  _median (ms)_",
                  "     _min (ms)_", "     _max (ms)_", "      _events_");

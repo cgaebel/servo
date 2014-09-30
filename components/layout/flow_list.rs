@@ -2,90 +2,94 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use flow::Flow;
+use flow::{Flow, base, mut_base};
 use flow_ref::FlowRef;
 
-use std::collections::{Deque, dlist, DList};
+use std::kinds::marker::ContravariantLifetime;
+use std::mem;
+use std::ptr;
+use std::raw;
+
+pub type Link = Option<FlowRef>;
+
+#[allow(raw_pointer_deriving)]
+pub struct Rawlink<'a> {
+    object: raw::TraitObject,
+    marker: ContravariantLifetime<'a>,
+}
 
 // This needs to be reworked now that we have dynamically-sized types in Rust.
 // Until then, it's just a wrapper around DList.
 
 pub struct FlowList {
-    flows: DList<FlowRef>,
+    list_head: Link,
+    list_tail: Link,
 }
 
 pub struct FlowListIterator<'a> {
-    it: dlist::Items<'a, FlowRef>,
+    head: &'a Link,
 }
 
 pub struct MutFlowListIterator<'a> {
-    it: dlist::MutItems<'a, FlowRef>,
+    head: Rawlink<'a>,
 }
 
-impl Collection for FlowList {
-    /// O(1)
-    #[inline]
-    fn is_empty(&self) -> bool {
-        self.flows.is_empty()
+impl<'a> Rawlink<'a> {
+    /// Like Option::None for Rawlink
+    pub fn none() -> Rawlink<'static> {
+        Rawlink {
+            object: raw::TraitObject {
+                vtable: ptr::null_mut(),
+                data: ptr::null_mut(),
+            },
+            marker: ContravariantLifetime,
+        }
     }
-    /// O(1)
-    #[inline]
-    fn len(&self) -> uint {
-        self.flows.len()
+
+    /// Like Option::Some for Rawlink
+    pub fn some(n: &Flow) -> Rawlink {
+        unsafe {
+            Rawlink {
+                object: mem::transmute::<&Flow, raw::TraitObject>(n),
+                marker: ContravariantLifetime,
+            }
+        }
     }
+
+    pub unsafe fn resolve_mut(&self) -> Option<&'a mut Flow + 'a> {
+        if self.object.data.is_null() {
+            None
+        } else {
+            Some(mem::transmute_copy::<raw::TraitObject, &mut Flow>(&self.object))
+        }
+    }
+}
+
+/// Set the .prev field on `next`, then return `Some(next)`
+unsafe fn link_with_prev(mut next: FlowRef, prev: Option<FlowRef>) -> Link {
+    mut_base(next.get_mut()).prev_sibling = prev;
+    Some(next)
 }
 
 impl FlowList {
     /// Provide a reference to the front element, or None if the list is empty
     #[inline]
     pub fn front<'a>(&'a self) -> Option<&'a Flow> {
-        self.flows.front().map(|head| head.get())
+        self.iter().next()
     }
 
     /// Provide a mutable reference to the front element, or None if the list is empty
     #[inline]
     pub unsafe fn front_mut<'a>(&'a mut self) -> Option<&'a mut Flow> {
-        self.flows.front_mut().map(|head| head.get_mut())
-    }
-
-    /// Provide a reference to the back element, or None if the list is empty
-    #[inline]
-    pub fn back<'a>(&'a self) -> Option<&'a Flow> {
-        self.flows.back().map(|tail| tail.get())
-    }
-
-    /// Provide a mutable reference to the back element, or None if the list is empty
-    #[inline]
-    pub unsafe fn back_mut<'a>(&'a mut self) -> Option<&'a mut Flow> {
-        self.flows.back_mut().map(|tail| tail.get_mut())
-    }
-
-    /// Add an element first in the list
-    ///
-    /// O(1)
-    pub fn push_front(&mut self, new_head: FlowRef) {
-        self.flows.push_front(new_head);
-    }
-
-    /// Remove the first element and return it, or None if the list is empty
-    ///
-    /// O(1)
-    pub fn pop_front(&mut self) -> Option<FlowRef> {
-        self.flows.pop_front()
-    }
-
-    /// Add an element last in the list
-    ///
-    /// O(1)
-    pub fn push_back(&mut self, new_tail: FlowRef) {
-        self.flows.push(new_tail);
+        self.iter_mut().next()
     }
 
     /// Create an empty list
     #[inline]
     pub fn new() -> FlowList {
         FlowList {
-            flows: DList::new(),
+            list_head: None,
+            list_tail: None,
         }
     }
 
@@ -93,39 +97,161 @@ impl FlowList {
     #[inline]
     pub fn iter<'a>(&'a self) -> FlowListIterator<'a> {
         FlowListIterator {
-            it: self.flows.iter(),
+            head: &self.list_head,
         }
     }
 
     /// Provide a forward iterator with mutable references
     #[inline]
     pub fn iter_mut<'a>(&'a mut self) -> MutFlowListIterator<'a> {
+        let head_raw = match self.list_head {
+            Some(ref mut h) => Rawlink::some(h.get()),
+            None => Rawlink::none(),
+        };
         MutFlowListIterator {
-            it: self.flows.iter_mut(),
+            head: head_raw,
         }
+    }
+}
+
+impl Collection for FlowList {
+    fn len(&self) -> uint {
+        let mut ret = 0;
+        for _ in self.iter() { ret += 1; }
+        ret
+    }
+}
+
+pub trait TreeMutationMethods {
+    /// Add an element last in the list. O(1).
+    ///
+    /// NB: Only flow construction may safely call this!
+    fn push_back(&mut self, new_tail: FlowRef);
+}
+
+impl TreeMutationMethods for FlowRef {
+    fn push_back(&mut self, mut new_tail: FlowRef) {
+        remove_flow_from_parent(new_tail.get_mut());
+
+        let this = self.clone();
+        let base = mut_base(self.get_mut());
+        if base.children.list_tail.is_none() {
+            unsafe {
+                mut_base(new_tail.get_mut()).set_parent(Some(this));
+            }
+            base.children.list_head = Some(new_tail.clone());
+            base.children.list_tail = Some(new_tail);
+            return
+        }
+
+        let old_tail = base.children.list_tail.clone();
+        base.children.list_tail = Some(new_tail.clone());
+        let mut tail = (*old_tail.as_ref().unwrap()).clone();
+        let tail_clone = Some(tail.clone());
+        unsafe {
+            let tail_base = mut_base(tail.get_mut());
+            mut_base(new_tail.get_mut()).set_parent(Some(this));
+            tail_base.next_sibling = link_with_prev(new_tail, tail_clone);
+        }
+    }
+}
+
+#[unsafe_destructor]
+impl Drop for FlowList {
+    fn drop(&mut self) {
+        // Dissolve the list in backwards direction
+        // Just dropping the list_head can lead to stack exhaustion
+        // when length is >> 1_000_000
+        let mut tail = mem::replace(&mut self.list_tail, None);
+        loop {
+            let new_tail = match tail {
+                None => break,
+                Some(ref mut prev) => {
+                    let prev_base = mut_base(prev.get_mut());
+                    prev_base.next_sibling.take();
+                    prev_base.prev_sibling.clone()
+                }
+            };
+            tail = new_tail
+        }
+        self.list_head = None;
     }
 }
 
 impl<'a> Iterator<&'a Flow + 'a> for FlowListIterator<'a> {
     #[inline]
     fn next(&mut self) -> Option<&'a Flow + 'a> {
-        self.it.next().map(|x| x.get())
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (uint, Option<uint>) {
-        self.it.size_hint()
+        self.head.as_ref().map(|head| {
+            let head_base = base(head.get());
+            self.head = &head_base.next_sibling;
+            let ret: &Flow = head.get();
+            ret
+        })
     }
 }
 
 impl<'a> Iterator<&'a mut Flow + 'a> for MutFlowListIterator<'a> {
     #[inline]
-    fn next(&mut self) -> Option<&'a mut Flow + 'a> {
-        self.it.next().map(|x| x.get_mut())
+    fn next<'b>(&'b mut self) -> Option<&'a mut Flow + 'a> {
+        unsafe {
+            let resolved: Option<&'a mut Flow + 'a> = self.head.resolve_mut();
+            resolved.map(|next| {
+                self.head = match mut_base(next).next_sibling {
+                    Some(ref mut node) => {
+                        let x: &mut Flow = node.get_mut();
+                        // NOTE: transmute needed here to break the link
+                        // between x and next so that it is no longer
+                        // borrowed.
+                        mem::transmute(Rawlink::some(x))
+                    }
+                    None => Rawlink::none(),
+                };
+                next
+            })
+        }
+    }
+}
+
+/// Unlinks a flow from its container, if it's in one.
+///
+/// NB: Do not make this public!
+///
+/// FIXME(pcwalton): This should taint the containing flow. It's not safe to perform parallel
+/// layout on it since its atomic counters may be messed up.
+fn remove_flow_from_parent(flow: &mut Flow) {
+    let flow_base = mut_base(flow);
+    let prev_sibling = flow_base.prev_sibling.clone();
+    let mut prev_sibling_2 = flow_base.prev_sibling.clone();
+    let mut next_sibling = flow_base.next_sibling.clone();
+    unsafe {
+        let flow_parent = flow_base.parent();
+        let flow_parent = match *flow_parent {
+            None => {
+                return
+            }
+            Some(ref mut parent) => parent,
+        };
+        match next_sibling {
+            None => {
+                mut_base(flow_parent.get_mut()).children.list_tail = prev_sibling
+            }
+            Some(ref mut next_sibling) => {
+                mut_base(next_sibling.get_mut()).prev_sibling = prev_sibling
+            }
+        }
+        match prev_sibling_2 {
+            None => {
+                mut_base(flow_parent.get_mut()).children.list_head = next_sibling
+            }
+            Some(ref mut prev_sibling) => {
+                mut_base(prev_sibling.get_mut()).next_sibling = next_sibling
+            }
+        }
     }
 
-    #[inline]
-    fn size_hint(&self) -> (uint, Option<uint>) {
-        self.it.size_hint()
+    unsafe {
+        flow_base.next_sibling = None;
+        flow_base.prev_sibling = None;
+        flow_base.set_parent(None);
     }
 }

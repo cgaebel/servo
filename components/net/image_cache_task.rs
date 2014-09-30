@@ -376,7 +376,7 @@ impl ImageCache {
     }
 
     fn get_image(&self, url: Url, response: Sender<ImageResponseMsg>) {
-        match self.get_state(url.clone()) {
+        match self.get_state(url) {
             Init => fail!("request for image before prefetch"),
             Prefetching(DoDecode) => response.send(ImageNotReady),
             Prefetching(DoNotDecode) | Prefetched(..) => fail!("request for image before decode"),

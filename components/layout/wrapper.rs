@@ -32,11 +32,12 @@
 //!
 //!   o Instead of `html_element_in_html_document()`, use
 //!     `html_element_in_html_document_for_layout()`.
-
+use context::SharedLayoutContext;
 use css::node_style::StyledNode;
-use util::{LayoutDataAccess, LayoutDataWrapper, PrivateLayoutData};
+use util::{LayoutDataAccess, LayoutDataWrapper, PrivateLayoutData, OpaqueNodeMethods};
 
 use script::dom::bindings::codegen::InheritTypes::{HTMLIFrameElementDerived, HTMLInputElementDerived};
+use gfx::display_list::OpaqueNode;
 use script::dom::bindings::codegen::InheritTypes::{HTMLImageElementDerived, TextDerived};
 use script::dom::bindings::js::JS;
 use script::dom::element::{Element, HTMLAreaElementTypeId, HTMLAnchorElementTypeId};
@@ -45,7 +46,9 @@ use script::dom::htmliframeelement::HTMLIFrameElement;
 use script::dom::htmlimageelement::{HTMLImageElement, LayoutHTMLImageElementHelpers};
 use script::dom::htmlinputelement::{HTMLInputElement, LayoutHTMLInputElementHelpers};
 use script::dom::node::{DocumentNodeTypeId, ElementNodeTypeId, Node, NodeTypeId};
-use script::dom::node::{LayoutNodeHelpers, RawLayoutNodeHelpers, SharedLayoutData, TextNodeTypeId};
+use script::dom::node::{RawLayoutNodeHelpers, SharedLayoutData, TextNodeTypeId};
+use script::dom::node::{HasFragmentChildren, IsFragment, LayoutNodeHelpers};
+use script::dom::node::{IsDirty, ForceReflow, HasDirtyChildren, HasDirtyDescendants};
 use script::dom::text::Text;
 use script::layout_interface::LayoutChan;
 use servo_msg::constellation_msg::{PipelineId, SubpageId};
@@ -249,6 +252,23 @@ impl<'ln> LayoutNode<'ln> {
             Some(_) => {}
         }
     }
+
+    /// Returns true if this node has children or false otherwise.
+    pub fn has_children(&self) -> bool {
+        self.first_child().is_some()
+    }
+
+    /// While doing a reflow, the node at the root has no parent, as far as we're
+    /// concerned. This method returns `None` at the reflow root.
+    #[inline]
+    pub fn layout_parent_node(&self, shared: &SharedLayoutContext) -> Option<LayoutNode<'ln>> {
+        let opaque_node: OpaqueNode = OpaqueNodeMethods::from_layout_node(self);
+        if opaque_node == shared.reflow_root {
+            None
+        } else {
+            self.parent_node()
+        }
+    }
 }
 
 impl<'ln> TNode<'ln, LayoutElement<'ln>> for LayoutNode<'ln> {
@@ -322,6 +342,102 @@ impl<'ln> TNode<'ln, LayoutElement<'ln>> for LayoutNode<'ln> {
                 element.html_element_in_html_document_for_layout()
             }
         }
+    }
+
+    fn is_dirty(self) -> bool {
+        unsafe {
+            self.node.get_flags().contains(IsDirty)
+        }
+    }
+
+    unsafe fn set_is_dirty(self, value: bool) {
+        let mut flags = self.node.get_flags();
+        if value {
+            flags.insert(IsDirty);
+        } else {
+            flags.remove(IsDirty);
+        }
+        self.node.set_flags(flags)
+    }
+
+    fn must_force_reflow(self) -> bool {
+        unsafe {
+            self.node.get_flags().contains(ForceReflow)
+        }
+    }
+
+    unsafe fn set_must_force_reflow(self, value: bool) {
+        let mut flags = self.node.get_flags();
+        if value {
+            flags.insert(ForceReflow);
+        } else {
+            flags.remove(ForceReflow);
+        }
+        self.node.set_flags(flags)
+    }
+
+    fn has_dirty_descendants(self) -> bool {
+        unsafe {
+            self.node.get_flags().contains(HasDirtyDescendants)
+        }
+    }
+
+    unsafe fn set_has_dirty_descendants(self, value: bool) {
+        let mut flags = self.node.get_flags();
+        if value {
+            flags.insert(HasDirtyDescendants);
+        } else {
+            flags.remove(HasDirtyDescendants);
+        }
+        self.node.set_flags(flags)
+    }
+
+    fn has_dirty_children(self) -> bool {
+        unsafe {
+            self.node.get_flags().contains(HasDirtyChildren)
+        }
+    }
+
+    unsafe fn set_has_dirty_children(self, value: bool) {
+        let mut flags = self.node.get_flags();
+        if value {
+            flags.insert(HasDirtyChildren);
+        } else {
+            flags.remove(HasDirtyChildren);
+        }
+        self.node.set_flags(flags)
+    }
+
+    fn is_fragment(self) -> bool {
+        unsafe {
+            self.node.get_flags().contains(IsFragment)
+        }
+    }
+
+    unsafe fn set_is_fragment(self, value: bool) {
+        let mut flags = self.node.get_flags();
+        if value {
+            flags.insert(IsFragment);
+        } else {
+            flags.remove(IsFragment);
+        }
+        self.node.set_flags(flags)
+    }
+
+    fn has_fragment_children(self) -> bool {
+        unsafe {
+            self.node.get_flags().contains(HasFragmentChildren)
+        }
+    }
+
+    unsafe fn set_has_fragment_children(self, value: bool) {
+        let mut flags = self.node.get_flags();
+        if value {
+            flags.insert(HasFragmentChildren);
+        } else {
+            flags.remove(HasFragmentChildren);
+        }
+        self.node.set_flags(flags)
     }
 }
 
@@ -525,10 +641,6 @@ impl<'ln> TLayoutNode for ThreadSafeLayoutNode<'ln> {
         self.node.type_id()
     }
 
-    unsafe fn get_jsmanaged<'a>(&'a self) -> &'a JS<Node> {
-        self.node.get_jsmanaged()
-    }
-
     unsafe fn get<'a>(&'a self) -> &'a Node { // this change.
         mem::transmute::<*mut Node,&'a Node>(self.get_jsmanaged().unsafe_get())
     }
@@ -573,6 +685,10 @@ impl<'ln> TLayoutNode for ThreadSafeLayoutNode<'ln> {
             }
         }
         self.node.text()
+    }
+
+    unsafe fn get_jsmanaged<'a>(&'a self) -> &'a JS<Node> {
+        self.node.get_jsmanaged()
     }
 }
 
@@ -750,6 +866,26 @@ impl<'ln> ThreadSafeLayoutNode<'ln> {
             input.get_size_for_layout()
         }
     }
+
+    pub fn set_is_fragment(&self, value: bool) {
+        unsafe {
+            self.node.set_is_fragment(value)
+        }
+    }
+
+    pub fn set_has_fragment_children(&self, value: bool) {
+        unsafe {
+            self.node.set_has_fragment_children(value)
+        }
+    }
+
+    pub fn ts_is_dirty(&self) -> bool {
+        self.node.is_dirty()
+    }
+
+    pub fn ts_has_dirty_descendants(&self) -> bool {
+        self.node.has_dirty_descendants()
+    }
 }
 
 pub struct ThreadSafeLayoutNodeChildrenIterator<'a> {
@@ -848,4 +984,3 @@ pub unsafe fn layout_node_from_unsafe_layout_node(node: &UnsafeLayoutNode) -> La
     let (node, _) = *node;
     mem::transmute(node)
 }
-

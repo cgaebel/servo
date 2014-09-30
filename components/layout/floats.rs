@@ -11,6 +11,11 @@ use std::fmt;
 use style::computed_values::float;
 use sync::Arc;
 
+use log;
+use std::rt;
+use std::str;
+use std::io::MemWriter;
+
 /// The kind of float: left or right.
 #[deriving(Clone, Encodable, Show)]
 pub enum FloatKind {
@@ -190,6 +195,10 @@ impl Floats {
         }
     }
 
+    pub fn len(&self) -> uint {
+        self.list.list.as_ref().map(|x| x.floats.len()).unwrap_or(0)
+    }
+
     /// Returns a rectangle that encloses the region from block-start to block-start + block-size, with inline-size small
     /// enough that it doesn't collide with any floats. max_x is the x-coordinate beyond which
     /// floats have no effect. (Generally this is the containing block inline-size.)
@@ -272,6 +281,12 @@ impl Floats {
 
     /// Adds a new float to the list.
     pub fn add_float(&mut self, info: &PlacementInfo) {
+        if log_enabled!(log::DEBUG) {
+            let mut w = MemWriter::new();
+            rt::backtrace::write(&mut w).unwrap();
+            debug!("Backtrace: {}", str::from_utf8(w.get_ref()).unwrap());
+        }
+
         let new_info;
         {
             let list = self.list.get_mut();
@@ -437,4 +452,3 @@ impl Floats {
         clearance
     }
 }
-

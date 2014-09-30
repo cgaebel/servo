@@ -54,7 +54,6 @@ use dom::uievent::UIEvent;
 use dom::window::{Window, WindowHelpers};
 use html::hubbub_html_parser::build_element_from_tag;
 use hubbub::hubbub::{QuirksMode, NoQuirks, LimitedQuirks, FullQuirks};
-use layout_interface::{DocumentDamageLevel, ContentChangedDocumentDamage};
 use servo_util::namespace;
 use servo_util::str::{DOMString, split_html_space_chars};
 
@@ -165,8 +164,8 @@ pub trait DocumentHelpers<'a> {
     fn set_quirks_mode(self, mode: QuirksMode);
     fn set_last_modified(self, value: DOMString);
     fn set_encoding_name(self, name: DOMString);
-    fn content_changed(self);
-    fn damage_and_reflow(self, damage: DocumentDamageLevel);
+    fn content_changed(self, node: JSRef<Node>);
+    fn reflow(self);
     fn wait_until_safe_to_modify_dom(self);
     fn unregister_named_element(self, to_unregister: JSRef<Element>, id: Atom);
     fn register_named_element(self, element: JSRef<Element>, id: Atom);
@@ -195,12 +194,13 @@ impl<'a> DocumentHelpers<'a> for JSRef<'a, Document> {
         *self.encoding_name.deref().borrow_mut() = name;
     }
 
-    fn content_changed(self) {
-        self.damage_and_reflow(ContentChangedDocumentDamage);
+    fn content_changed(self, node: JSRef<Node>) {
+        node.mark_dirty();
+        self.reflow();
     }
 
-    fn damage_and_reflow(self, damage: DocumentDamageLevel) {
-        self.window.root().damage_and_reflow(damage);
+    fn reflow(self) {
+        self.window.root().reflow();
     }
 
     fn wait_until_safe_to_modify_dom(self) {

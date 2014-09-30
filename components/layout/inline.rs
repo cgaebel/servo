@@ -12,6 +12,7 @@ use flow;
 use fragment::{Fragment, InlineBlockFragment, ScannedTextFragment, ScannedTextFragmentInfo};
 use fragment::{SplitInfo};
 use layout_debug;
+use incremental;
 use model::IntrinsicISizes;
 use text;
 use wrapper::ThreadSafeLayoutNode;
@@ -317,6 +318,8 @@ impl LineBreaker {
 
         let mut old_fragments = mem::replace(&mut flow.fragments, InlineFragments::new());
 
+        debug!("old fragments: {}", old_fragments.len());
+
         { // Enter a new scope so that old_fragment_iter's borrow is released
             let mut old_fragment_iter = old_fragments.fragments.iter();
             loop {
@@ -494,7 +497,7 @@ impl LineBreaker {
             self.push_fragment_to_line(in_fragment);
             true
         } else {
-            debug!("LineBreaker: Found a new-line character, so splitting theline.");
+            debug!("LineBreaker: Found a new-line character, so splitting the line.");
 
             let (inline_start, inline_end, run) = in_fragment.find_split_info_by_new_line()
                 .expect("LineBreaker: This split case makes no sense!");
@@ -584,6 +587,7 @@ impl LineBreaker {
 
         let available_inline_size = green_zone.inline - self.pending_line.bounds.size.inline;
         let split = in_fragment.find_split_info_for_inline_size(CharIndex(0), available_inline_size, line_is_empty);
+
         match split.map(|(inline_start, inline_end, run)| {
             // TODO(bjz): Remove fragment splitting
             let split_fragment = |split: SplitInfo| {
@@ -621,7 +625,7 @@ impl LineBreaker {
                 true
             },
             Some((None, None)) => {
-                error!("LineBreaker: This split case makes no sense!");
+                debug!("LineBreaker: Nothing to do.");
                 true
             },
         }
@@ -645,16 +649,16 @@ impl LineBreaker {
             fragment_index: FragmentIndex(1),
             char_index: CharIndex(0) /* unused for now */ ,
         });
-        self.pending_line.bounds.size.inline = self.pending_line.bounds.size.inline +
-            fragment.border_box.size.inline;
-        self.pending_line.bounds.size.block = Au::max(self.pending_line.bounds.size.block,
-                                                       fragment.border_box.size.block);
+        self.pending_line.bounds.size.inline =
+            self.pending_line.bounds.size.inline + fragment.border_box.size.inline;
+        self.pending_line.bounds.size.block =
+            Au::max(self.pending_line.bounds.size.block, fragment.border_box.size.block);
         self.new_fragments.push(fragment);
     }
 }
 
 /// Represents a list of inline fragments, including element ranges.
-#[deriving(Encodable)]
+#[deriving(Encodable, Clone)]
 pub struct InlineFragments {
     /// The fragments themselves.
     pub fragments: Vec<Fragment>,
@@ -762,13 +766,22 @@ pub struct InlineFlow {
 
 impl InlineFlow {
     pub fn from_fragments(node: ThreadSafeLayoutNode, fragments: InlineFragments) -> InlineFlow {
-        InlineFlow {
+        let fragment_damage = fragments.fragments.iter().fold(
+            incremental::RestyleDamage::empty(),
+            |dmg, frag| { dmg | frag.restyle_damage });
+
+
+        let mut ret = InlineFlow {
             base: BaseFlow::new(node),
             fragments: fragments,
             lines: Vec::new(),
             minimum_block_size_above_baseline: Au(0),
             minimum_depth_below_baseline: Au(0),
-        }
+        };
+
+        ret.base.restyle_damage.insert(fragment_damage);
+
+        ret
     }
 
     pub fn build_display_list_inline(&mut self, layout_context: &LayoutContext) {
@@ -1265,4 +1278,3 @@ impl InlineMetrics {
         }
     }
 }
-

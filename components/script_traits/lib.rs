@@ -9,6 +9,7 @@
 
 extern crate devtools_traits;
 extern crate geom;
+extern crate libc;
 extern crate "msg" as servo_msg;
 extern crate "net" as servo_net;
 extern crate url;
@@ -20,6 +21,7 @@ extern crate serialize;
 //   that these modules won't have to depend on script.
 
 use devtools_traits::DevtoolsControlChan;
+use libc::c_void;
 use servo_msg::constellation_msg::{ConstellationChan, PipelineId, Failure, WindowSizeData};
 use servo_msg::constellation_msg::SubpageId;
 use servo_msg::compositor_msg::ScriptListener;
@@ -38,6 +40,10 @@ pub struct NewLayoutInfo {
     pub subpage_id: SubpageId,
     pub layout_chan: Box<Any+Send>, // opaque reference to a LayoutChannel
 }
+
+/// The address of a node. Layout sends these back. They must be validated via
+/// `from_untrusted_node_address` before they can be used, because we do not trust layout.
+pub type UntrustedNodeAddress = *const c_void;
 
 /// Messages sent from the constellation to the script task
 pub enum ConstellationControlMsg {
@@ -60,7 +66,9 @@ pub enum ConstellationControlMsg {
 /// Events from the compositor that the script task needs to know about
 pub enum CompositorEvent {
     ResizeEvent(WindowSizeData),
-    ReflowEvent,
+    /// Before reflowing, the script can optionally dirty a node to ensure it's
+    /// actually reflowed, instead of incremental layout just ignoring the change.
+    ReflowEvent(Option<UntrustedNodeAddress>),
     ClickEvent(uint, Point2D<f32>),
     MouseDownEvent(uint, Point2D<f32>),
     MouseUpEvent(uint, Point2D<f32>),

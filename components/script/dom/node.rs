@@ -47,7 +47,7 @@ use dom::window::Window;
 use geom::rect::Rect;
 use html::hubbub_html_parser::build_element_from_tag;
 use layout_interface::{ContentBoxResponse, ContentBoxesResponse, LayoutRPC,
-                       LayoutChan, ReapLayoutDataMsg, TrustedNodeAddress, UntrustedNodeAddress};
+                       LayoutChan, ReapLayoutDataMsg, TrustedNodeAddress};
 use devtools_traits::NodeInfo;
 use servo_util::geometry::Au;
 use servo_util::str::{DOMString, null_str_as_empty};
@@ -57,8 +57,10 @@ use js::jsapi::{JSContext, JSObject, JSRuntime};
 use js::jsfriendapi;
 use libc;
 use libc::uintptr_t;
-use std::cell::{RefCell, Ref, RefMut};
 use std::default::Default;
+use log;
+use script_traits::UntrustedNodeAddress;
+use std::cell::{RefCell, Ref, RefMut};
 use std::iter::{Map, Filter};
 use std::mem;
 use style;
@@ -125,22 +127,38 @@ impl NodeDerived for EventTarget {
 bitflags! {
     #[doc = "Flags for node items."]
     #[jstraceable]
-    flags NodeFlags: u8 {
+    flags NodeFlags: u16 {
         #[doc = "Specifies whether this node is in a document."]
-        static IsInDoc = 0x01,
+        static IsInDoc = 0x0001,
         #[doc = "Specifies whether this node is in hover state."]
-        static InHoverState = 0x02,
+        static InHoverState = 0x0002,
         #[doc = "Specifies whether this node is in disabled state."]
-        static InDisabledState = 0x04,
+        static InDisabledState = 0x0004,
         #[doc = "Specifies whether this node is in enabled state."]
-        static InEnabledState = 0x08
+        static InEnabledState = 0x0008,
+        #[doc = "Specifies whether this node is dirty (i.e. has been modified since the last \
+                 layout)."]
+        static IsDirty = 0x0010,
+        #[doc = "Specifies whether this dirty node MUST be reflowed next layout, regardless of style changes."]
+        static ForceReflow = 0x0020,
+        #[doc = "Specifies whether this node has dirty descendants."]
+        static HasDirtyDescendants = 0x0040,
+        #[doc = "Specifies whether this node has dirty siblings."]
+        static HasDirtyChildren = 0x0080,
+        #[doc = "Specifies whether any of this node's layout items are fragments. If not set, the \
+                 node's layout items are either `display: none` or represent an entire flow."]
+        static IsFragment = 0x0100,
+        #[doc = "Specifies whether any immediate children of this node have layout items that \
+                 consist of fragments rather than flows. That is, if not set, all of the node's \
+                 children are either `display: none` or represent an entire flow."]
+        static HasFragmentChildren = 0x0200
     }
 }
 
 impl NodeFlags {
     pub fn new(type_id: NodeTypeId) -> NodeFlags {
         match type_id {
-            DocumentNodeTypeId => IsInDoc,
+            DocumentNodeTypeId => IsInDoc | IsDirty | ForceReflow | HasDirtyChildren | HasDirtyDescendants,
             // The following elements are enabled by default.
             ElementNodeTypeId(HTMLButtonElementTypeId) |
             ElementNodeTypeId(HTMLInputElementTypeId) |
@@ -149,8 +167,10 @@ impl NodeFlags {
             ElementNodeTypeId(HTMLOptGroupElementTypeId) |
             ElementNodeTypeId(HTMLOptionElementTypeId) |
             //ElementNodeTypeId(HTMLMenuItemElementTypeId) |
-            ElementNodeTypeId(HTMLFieldSetElementTypeId) => InEnabledState,
-            _ => NodeFlags::empty(),
+            ElementNodeTypeId(HTMLFieldSetElementTypeId) => {
+                InEnabledState | IsDirty | ForceReflow | HasDirtyChildren | HasDirtyDescendants
+            }
+            _ => IsDirty | ForceReflow | HasDirtyChildren | HasDirtyDescendants,
         }
     }
 }
@@ -270,7 +290,7 @@ impl<'a> PrivateNodeHelpers for JSRef<'a, Node> {
         let parent = self.parent_node().root();
         parent.map(|parent| vtable_for(&*parent).child_inserted(self));
 
-        document.deref().content_changed();
+        document.deref().content_changed(self);
     }
 
     // http://dom.spec.whatwg.org/#node-is-removed
@@ -282,7 +302,7 @@ impl<'a> PrivateNodeHelpers for JSRef<'a, Node> {
             vtable_for(&node).unbind_from_tree(parent_in_doc);
         }
 
-        document.deref().content_changed();
+        document.deref().content_changed(self);
     }
 
     //
@@ -407,6 +427,21 @@ pub trait NodeHelpers<'a> {
     fn dump_indent(self, indent: uint);
     fn debug_str(self) -> String;
 
+    fn get_dirty(self) -> bool;
+    fn set_dirty(self, state: bool);
+
+    fn get_force_reflow(self) -> bool;
+    fn set_force_reflow(self, state: bool);
+
+    fn get_has_dirty_descendants(self) -> bool;
+    fn set_has_dirty_descendants(self, state: bool);
+
+    fn get_has_dirty_children(self) -> bool;
+    fn set_has_dirty_children(self, state: bool);
+
+    /// Marks a node as dirty.
+    fn mark_dirty(self);
+
     fn traverse_preorder(self) -> TreeIterator<'a>;
     fn sequential_traverse_postorder(self) -> TreeIterator<'a>;
     fn inclusively_following_siblings(self) -> AbstractNodeChildrenIterator<'a>;
@@ -516,35 +551,103 @@ impl<'a> NodeHelpers<'a> for JSRef<'a, Node> {
     }
 
     fn set_hover_state(self, state: bool) {
+        let mut flags = self.flags.borrow_mut();
         if state {
-            self.flags.deref().borrow_mut().insert(InHoverState);
+            flags.insert(InHoverState);
         } else {
-            self.flags.deref().borrow_mut().remove(InHoverState);
+            flags.remove(InHoverState);
         }
     }
 
     fn get_disabled_state(self) -> bool {
-        self.flags.deref().borrow().contains(InDisabledState)
+        self.flags.borrow().contains(InDisabledState)
     }
 
     fn set_disabled_state(self, state: bool) {
+        let mut flags = self.flags.borrow_mut();
         if state {
-            self.flags.deref().borrow_mut().insert(InDisabledState);
+            flags.insert(InDisabledState);
         } else {
-            self.flags.deref().borrow_mut().remove(InDisabledState);
+            flags.remove(InDisabledState);
         }
     }
 
     fn get_enabled_state(self) -> bool {
-        self.flags.deref().borrow().contains(InEnabledState)
+        self.flags.borrow().contains(InEnabledState)
     }
 
     fn set_enabled_state(self, state: bool) {
+        let mut flags = self.flags.borrow_mut();
         if state {
-            self.flags.deref().borrow_mut().insert(InEnabledState);
+            flags.insert(InEnabledState);
         } else {
-            self.flags.deref().borrow_mut().remove(InEnabledState);
+            flags.remove(InEnabledState);
         }
+    }
+
+    fn get_dirty(self) -> bool {
+        self.flags.borrow().contains(IsDirty)
+    }
+
+    fn set_dirty(self, state: bool) {
+        let mut flags = self.flags.borrow_mut();
+        if state {
+            flags.insert(IsDirty);
+        } else {
+            flags.remove(IsDirty);
+        }
+    }
+
+    fn get_force_reflow(self) -> bool {
+        self.flags.borrow().contains(ForceReflow)
+    }
+
+    fn set_force_reflow(self, state: bool) {
+        let mut flags = self.flags.borrow_mut();
+        if state {
+            flags.insert(ForceReflow);
+        } else {
+            flags.remove(ForceReflow);
+        }
+    }
+
+    fn get_has_dirty_descendants(self) -> bool {
+        self.flags.borrow().contains(HasDirtyDescendants)
+    }
+
+    fn set_has_dirty_descendants(self, state: bool) {
+        let mut flags = self.flags.borrow_mut();
+        if state {
+            flags.insert(HasDirtyDescendants);
+        } else {
+            flags.remove(HasDirtyDescendants);
+        }
+    }
+
+    fn get_has_dirty_children(self) -> bool {
+        self.flags.borrow().contains(HasDirtyChildren)
+    }
+
+    fn set_has_dirty_children(self, state: bool) {
+        let mut flags = self.flags.borrow_mut();
+        if state {
+            flags.insert(HasDirtyChildren);
+        } else {
+            flags.remove(HasDirtyChildren);
+        }
+    }
+
+    /// Marks an entire subtree of DOM nodes as dirty.
+    fn mark_dirty(self) {
+        if log_enabled!(log::DEBUG) {
+            let TrustedNodeAddress(addr) = self.to_trusted_node_address();
+            error!("Marking {} as dirty.", addr);
+        }
+
+        // The dirty flag will be propagated to descendants, but the reflow force
+        // will only happen on this node.
+        self.set_dirty(true);
+        self.set_force_reflow(true);
     }
 
     /// Iterates over this node and all its descendants, in preorder.
@@ -763,6 +866,8 @@ pub trait LayoutNodeHelpers {
     unsafe fn owner_doc_for_layout(&self) -> JS<Document>;
 
     unsafe fn is_element_for_layout(&self) -> bool;
+    unsafe fn get_flags(&self) -> NodeFlags;
+    unsafe fn set_flags(&self, flags: NodeFlags);
 }
 
 impl LayoutNodeHelpers for JS<Node> {
@@ -804,6 +909,17 @@ impl LayoutNodeHelpers for JS<Node> {
     #[inline]
     unsafe fn owner_doc_for_layout(&self) -> JS<Document> {
         (*self.unsafe_get()).owner_doc.get_inner().unwrap()
+    }
+
+    #[inline]
+    unsafe fn get_flags(&self) -> NodeFlags {
+        *((*self.unsafe_get()).flags.borrow().deref())
+    }
+
+    #[inline]
+    unsafe fn set_flags(&self, flags: NodeFlags) {
+        let mut self_flags = (*self.unsafe_get()).flags.borrow_mut();
+        *self_flags = flags;
     }
 }
 
@@ -1235,10 +1351,11 @@ impl Node {
             parent.add_child(*node, child);
             let is_in_doc = parent.is_in_doc();
             for kid in node.traverse_preorder() {
+                let mut flags = kid.deref().flags.borrow_mut();
                 if is_in_doc {
-                    kid.flags.deref().borrow_mut().insert(IsInDoc);
+                    flags.insert(IsInDoc);
                 } else {
-                    kid.flags.deref().borrow_mut().remove(IsInDoc);
+                    flags.remove(IsInDoc);
                 }
             }
         }
@@ -1325,7 +1442,8 @@ impl Node {
         // Step 8.
         parent.remove_child(node);
 
-        node.deref().flags.deref().borrow_mut().remove(IsInDoc);
+        let mut flags = node.flags.borrow_mut();
+        flags.remove(IsInDoc);
 
         // Step 9.
         match suppress_observers {
@@ -1664,7 +1782,7 @@ impl<'a> NodeMethods for JSRef<'a, Node> {
 
                 // Notify the document that the content of this node is different
                 let document = self.owner_doc().root();
-                document.deref().content_changed();
+                document.deref().content_changed(self);
             }
             DoctypeNodeTypeId |
             DocumentNodeTypeId => {}
@@ -2124,6 +2242,74 @@ impl<'a> style::TNode<'a, JSRef<'a, Element>> for JSRef<'a, Node> {
         let elem: Option<JSRef<'a, Element>> = ElementCast::to_ref(self);
         assert!(elem.is_some());
         elem.unwrap().html_element_in_html_document()
+    }
+
+    fn is_dirty(self) -> bool {
+        self.get_dirty()
+    }
+
+    fn set_is_dirty(self, value: bool) {
+        self.set_dirty(value)
+    }
+
+    fn must_force_reflow(self) -> bool {
+        self.get_force_reflow()
+    }
+
+    fn set_must_force_reflow(self, value: bool) {
+        self.set_force_reflow(value)
+    }
+
+    fn has_dirty_descendants(self) -> bool {
+        self.get_has_dirty_descendants()
+    }
+
+    fn set_has_dirty_descendants(self, value: bool) {
+        let mut flags = self.flags.borrow_mut();
+        if value {
+            flags.insert(HasDirtyDescendants);
+        } else {
+            flags.remove(HasDirtyDescendants);
+        }
+    }
+
+    fn has_dirty_children(self) -> bool {
+        self.get_has_dirty_children()
+    }
+
+    fn set_has_dirty_children(self, value: bool) {
+        let mut flags = self.flags.borrow_mut();
+        if value {
+            flags.insert(HasDirtyChildren);
+        } else {
+            flags.remove(HasDirtyChildren);
+        }
+    }
+
+    fn is_fragment(self) -> bool {
+        self.flags.borrow().contains(IsFragment)
+    }
+
+    fn set_is_fragment(self, state: bool) {
+        let mut flags = self.flags.borrow_mut();
+        if state {
+            flags.insert(IsFragment);
+        } else {
+            flags.remove(IsFragment);
+        }
+    }
+
+    fn has_fragment_children(self) -> bool {
+        self.flags.borrow().contains(HasFragmentChildren)
+    }
+
+    fn set_has_fragment_children(self, state: bool) {
+        let mut flags = self.flags.borrow_mut();
+        if state {
+            flags.insert(HasFragmentChildren);
+        } else {
+            flags.remove(HasFragmentChildren);
+        }
     }
 }
 

@@ -15,6 +15,7 @@ use sync::Arc;
 pub trait StyledNode {
     fn style<'a>(&'a self) -> &'a Arc<ComputedValues>;
     fn restyle_damage(&self) -> RestyleDamage;
+    fn set_restyle_damage(&self, damage: RestyleDamage);
 }
 
 impl<'ln> StyledNode for ThreadSafeLayoutNode<'ln> {
@@ -23,8 +24,13 @@ impl<'ln> StyledNode for ThreadSafeLayoutNode<'ln> {
         self.get_css_select_results()
     }
 
+    #[inline]
     fn restyle_damage(&self) -> RestyleDamage {
         self.get_restyle_damage()
     }
-}
 
+    #[inline]
+    fn set_restyle_damage(&self, damage: RestyleDamage) {
+        self.set_restyle_damage_(damage)
+    }
+}

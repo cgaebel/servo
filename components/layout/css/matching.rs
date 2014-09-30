@@ -7,10 +7,11 @@
 use css::node_style::StyledNode;
 use construct::FlowConstructor;
 use context::LayoutContext;
+use incremental;
+use incremental::RestyleDamage;
 use util::{LayoutDataAccess, LayoutDataWrapper};
-use wrapper::{LayoutElement, LayoutNode, PostorderNodeMutTraversal, ThreadSafeLayoutNode, TLayoutNode};
+use wrapper::{LayoutElement, LayoutNode, PostorderNodeMutTraversal, ThreadSafeLayoutNode};
 
-use script::dom::node::{TextNodeTypeId};
 use servo_util::bloom::BloomFilter;
 use servo_util::cache::{Cache, LRUCache, SimpleHashCache};
 use servo_util::smallvec::{SmallVec, SmallVec16};
@@ -291,6 +292,13 @@ pub trait MatchMethods {
     /// called to reset the bloom filter after an `insert`.
     fn remove_from_bloom_filter(&self, bf: &mut BloomFilter);
 
+    // If the parent has any dirty children, then we need to be restyled if
+    // there's any applicable sibling selectors. Unfortunately, finding out
+    // whether there's any matching sibling selectors is just as efficient as
+    // doing the selection itself. Therefore, we'll just restyle always if the
+    // node's parent has dirty children.
+    fn needs_style_recalc(&self, parent: &Option<LayoutNode>) -> bool;
+
     /// Performs aux initialization, selector matching, cascading, and flow construction
     /// sequentially.
     fn recalc_style_for_subtree(&self,
@@ -328,7 +336,7 @@ trait PrivateMatchMethods {
                                    style: &mut Option<Arc<ComputedValues>>,
                                    applicable_declarations_cache: &mut
                                    ApplicableDeclarationsCache,
-                                   shareable: bool);
+                                   shareable: bool) -> RestyleDamage;
 
     fn share_style_with_candidate_if_possible(&self,
                                               parent_node: Option<LayoutNode>,
@@ -343,7 +351,7 @@ impl<'ln> PrivateMatchMethods for LayoutNode<'ln> {
                                    style: &mut Option<Arc<ComputedValues>>,
                                    applicable_declarations_cache: &mut
                                    ApplicableDeclarationsCache,
-                                   shareable: bool) {
+                                   shareable: bool) -> RestyleDamage {
         let this_style;
         let cacheable;
         match parent_style {
@@ -375,7 +383,9 @@ impl<'ln> PrivateMatchMethods for LayoutNode<'ln> {
             applicable_declarations_cache.insert(applicable_declarations, this_style.clone());
         }
 
+        let damage = incremental::compute_damage(style, &*this_style);
         *style = Some(this_style);
+        damage
     }
 
 
@@ -446,8 +456,7 @@ impl<'ln> MatchMethods for LayoutNode<'ln> {
     unsafe fn share_style_if_possible(&self,
                                       style_sharing_candidate_cache:
                                         &mut StyleSharingCandidateCache,
-                                      parent: Option<LayoutNode>)
-                                      -> StyleSharingResult {
+                                      parent: Option<LayoutNode>) -> StyleSharingResult {
         if !self.is_element() {
             return CannotShare(false)
         }
@@ -463,8 +472,15 @@ impl<'ln> MatchMethods for LayoutNode<'ln> {
             match self.share_style_with_candidate_if_possible(parent.clone(), candidate) {
                 Some(shared_style) => {
                     // Yay, cache hit. Share the style.
-                    let mut layout_data_ref = self.mutate_layout_data();
-                    layout_data_ref.as_mut().unwrap().shared_data.style = Some(shared_style);
+                    let damage = {
+                        let mut layout_data_ref = self.mutate_layout_data();
+                        let shared_data = &mut layout_data_ref.as_mut().unwrap().shared_data;
+                        let style = &mut shared_data.style;
+                        let damage = incremental::compute_damage(style, &*shared_style);
+                        *style = Some(shared_style);
+                        damage
+                    };
+                    ThreadSafeLayoutNode::new(self).set_restyle_damage(damage);
                     return StyleWasShared(i)
                 }
                 None => {}
@@ -527,64 +543,117 @@ impl<'ln> MatchMethods for LayoutNode<'ln> {
             });
     }
 
+    #[inline]
+    fn needs_style_recalc(&self, parent: &Option<LayoutNode>) -> bool {
+        self.is_dirty() || parent.map(|p| p.has_dirty_children()).unwrap_or(false)
+    }
+
     fn recalc_style_for_subtree(&self,
                                 stylist: &Stylist,
                                 layout_context: &LayoutContext,
                                 parent_bf: &mut Option<BloomFilter>,
                                 applicable_declarations: &mut ApplicableDeclarations,
                                 parent: Option<LayoutNode>) {
-        self.initialize_layout_data(layout_context.shared.layout_chan.clone());
+        if self.needs_style_recalc(&parent) {
+            self.initialize_layout_data(layout_context.shared.layout_chan.clone());
 
-        // First, check to see whether we can share a style with someone.
-        let sharing_result = unsafe {
-            self.share_style_if_possible(layout_context.style_sharing_candidate_cache(), parent.clone())
-        };
-
-        // Otherwise, match and cascade selectors.
-        match sharing_result {
-            CannotShare(mut shareable) => {
-                if self.is_element() {
-                    self.match_node(stylist, &*parent_bf, applicable_declarations, &mut shareable);
-                }
-
-                unsafe {
-                    self.cascade_node(parent,
-                                      applicable_declarations,
-                                      layout_context.applicable_declarations_cache())
-                }
-
-                applicable_declarations.clear();
-
-                // Add ourselves to the LRU cache.
-                if shareable {
-                    layout_context.style_sharing_candidate_cache().insert_if_possible(self)
+            if self.is_fragment() {
+                let mut layout_data = self.mutate_layout_data();
+                // Drop the old style, to force reflow.
+                match layout_data.as_mut() {
+                    None => fail!("No layout data."),
+                    Some(ref mut layout_data) => {
+                        layout_data.shared_data.style = None;
+                    }
                 }
             }
-            StyleWasShared(index) => layout_context.style_sharing_candidate_cache().touch(index),
-        }
+
+            // First, check to see whether we can share a style with someone.
+            let sharing_result = unsafe {
+                self.share_style_if_possible(layout_context.style_sharing_candidate_cache(), parent.clone())
+            };
+
+            // Otherwise, match and cascade selectors.
+            match sharing_result {
+                CannotShare(mut shareable) => {
+                    if self.is_element() {
+                        self.match_node(stylist, &*parent_bf, applicable_declarations, &mut shareable);
+                    }
+
+                    unsafe {
+                        self.cascade_node(parent,
+                                          applicable_declarations,
+                                          layout_context.applicable_declarations_cache());
+                    }
+
+                    applicable_declarations.clear();
+
+                    // Add ourselves to the LRU cache.
+                    if shareable {
+                        layout_context.style_sharing_candidate_cache().insert_if_possible(self)
+                    }
+                }
+                StyleWasShared(index) => {
+                    layout_context.style_sharing_candidate_cache().touch(index);
+                }
+            }
+        } else {
+
+            // Not unsafe, since this is called in a top-down traversal, we're
+            // allowed to access our parents. However, issuing a borrow could lead
+            // to race conditions.
+            unsafe {
+                let restyle_damage =
+                    match parent {
+                        None => RestyleDamage::empty(),
+                        Some(parent_node) => {
+                            let parent_layout_data = parent_node.borrow_layout_data_unchecked();
+                            match *parent_layout_data {
+                                None => fail!("no parent data?!"),
+                                Some(ref parent_layout_data) =>
+                                    parent_layout_data.data.restyle_damage.propagate_down()
+                            }
+                        }
+                    };
+
+                ThreadSafeLayoutNode::new(self).set_restyle_damage(restyle_damage);
+            }
+        };
 
         match *parent_bf {
             None => {},
             Some(ref mut pbf) => self.insert_into_bloom_filter(pbf),
         }
 
-        for kid in self.children() {
-            kid.recalc_style_for_subtree(stylist,
-                                         layout_context,
-                                         parent_bf,
-                                         applicable_declarations,
-                                         Some(self.clone()));
+        if self.has_dirty_descendants() || self.has_fragment_children() {
+            for kid in self.children() {
+                kid.recalc_style_for_subtree(stylist,
+                                             layout_context,
+                                             parent_bf,
+                                             applicable_declarations,
+                                             Some(self.clone()));
+            }
         }
+
+        unsafe { self.set_has_dirty_children(false); }
 
         match *parent_bf {
             None => {},
             Some(ref mut pbf) => self.remove_from_bloom_filter(pbf),
         }
 
-        // Construct flows.
-        let layout_node = ThreadSafeLayoutNode::new(self);
-        let mut flow_constructor = FlowConstructor::new(layout_context);
-        flow_constructor.process(&layout_node);
+        // Construct flows if necessary.
+        if self.needs_style_recalc(&parent) || self.has_dirty_descendants() || self.is_fragment() {
+            let layout_node = ThreadSafeLayoutNode::new(self);
+            let mut flow_constructor = FlowConstructor::new(layout_context);
+            flow_constructor.process(&layout_node);
+
+            unsafe {
+                self.set_is_dirty(false);
+                self.set_has_dirty_children(false);
+                self.set_has_dirty_descendants(false);
+            }
+        }
     }
 
     unsafe fn cascade_node(&self,
@@ -596,58 +665,57 @@ impl<'ln> MatchMethods for LayoutNode<'ln> {
         //
         // FIXME(pcwalton): Isolate this unsafety into the `wrapper` module to allow
         // enforced safe, race-free access to the parent style.
-        let parent_style = match parent {
-            None => None,
+        let (down_restyle_damage, parent_style) = match parent {
+            None => (RestyleDamage::empty(), None),
             Some(parent_node) => {
                 let parent_layout_data = parent_node.borrow_layout_data_unchecked();
                 match *parent_layout_data {
                     None => fail!("no parent data?!"),
                     Some(ref parent_layout_data) => {
+                        let down_restyle_damage =
+                            parent_layout_data.data.restyle_damage.propagate_down();
                         match parent_layout_data.shared_data.style {
                             None => fail!("parent hasn't been styled yet?!"),
-                            Some(ref style) => Some(style),
+                            Some(ref style) => (down_restyle_damage, Some(style)),
                         }
                     }
                 }
             }
         };
 
-        let mut layout_data_ref = self.mutate_layout_data();
-        match &mut *layout_data_ref {
-            &None => fail!("no layout data"),
-            &Some(ref mut layout_data) => {
-                match self.type_id() {
-                    Some(TextNodeTypeId) => {
-                        // Text nodes get a copy of the parent style. This ensures
-                        // that during fragment construction any non-inherited
-                        // CSS properties (such as vertical-align) are correctly
-                        // set on the fragment(s).
-                        let cloned_parent_style = parent_style.unwrap().clone();
-                        layout_data.shared_data.style = Some(cloned_parent_style);
+        let mut damage = down_restyle_damage;
+
+        {
+            let mut layout_data_ref = self.mutate_layout_data();
+            match &mut *layout_data_ref {
+                &None => fail!("no layout data"),
+                &Some(ref mut layout_data) => {
+                    damage = damage | self.cascade_node_pseudo_element(
+                        parent_style,
+                        applicable_declarations.normal.as_slice(),
+                        &mut layout_data.shared_data.style,
+                        applicable_declarations_cache,
+                        applicable_declarations.normal_shareable);
+                    if applicable_declarations.before.len() > 0 {
+                        damage = damage | self.cascade_node_pseudo_element(
+                            Some(layout_data.shared_data.style.as_ref().unwrap()),
+                            applicable_declarations.before.as_slice(),
+                            &mut layout_data.data.before_style,
+                            applicable_declarations_cache,
+                            false);
                     }
-                    _ => {
-                        self.cascade_node_pseudo_element(parent_style,
-                                                         applicable_declarations.normal.as_slice(),
-                                                         &mut layout_data.shared_data.style,
-                                                         applicable_declarations_cache,
-                                                         applicable_declarations.normal_shareable);
-                        if applicable_declarations.before.len() > 0 {
-                            self.cascade_node_pseudo_element(Some(layout_data.shared_data.style.as_ref().unwrap()),
-                                                             applicable_declarations.before.as_slice(),
-                                                             &mut layout_data.data.before_style,
-                                                             applicable_declarations_cache,
-                                                             false);
-                        }
-                        if applicable_declarations.after.len() > 0 {
-                            self.cascade_node_pseudo_element(Some(layout_data.shared_data.style.as_ref().unwrap()),
-                                                             applicable_declarations.after.as_slice(),
-                                                             &mut layout_data.data.after_style,
-                                                             applicable_declarations_cache,
-                                                             false);
-                        }
+                    if applicable_declarations.after.len() > 0 {
+                        damage = damage | self.cascade_node_pseudo_element(
+                            Some(layout_data.shared_data.style.as_ref().unwrap()),
+                            applicable_declarations.after.as_slice(),
+                            &mut layout_data.data.after_style,
+                            applicable_declarations_cache,
+                            false);
                     }
                 }
             }
         }
+
+        ThreadSafeLayoutNode::new(self).set_restyle_damage(damage);
     }
 }

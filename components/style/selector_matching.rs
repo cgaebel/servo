@@ -631,7 +631,7 @@ fn matches_compound_selector_internal<'a,
                 NextSibling => (true, NotMatchedAndRestartFromClosestDescendant),
                 LaterSibling => (true, NotMatchedAndRestartFromClosestDescendant),
             };
-            let mut node = (*element).clone();
+            let mut node = *element;
             loop {
                 let next_node = if siblings {
                     node.prev_sibling()
@@ -876,7 +876,7 @@ fn matches_generic_nth_child<'a,
                              is_of_type: bool,
                              is_from_end: bool)
                              -> bool {
-    let mut node = element.clone();
+    let mut node = *element;
     // fail if we can't find a parent or if the node is the root element
     // of the document (Cf. Selectors Level 3)
     match node.parent_node() {
@@ -933,7 +933,7 @@ fn matches_root<'a, E:TElement<'a>,N:TNode<'a, E>>(element: &N) -> bool {
 
 #[inline]
 fn matches_first_child<'a, E:TElement<'a>,N:TNode<'a, E>>(element: &N) -> bool {
-    let mut node = element.clone();
+    let mut node = *element;
     loop {
         match node.prev_sibling() {
             Some(prev_sibling) => {
@@ -955,7 +955,7 @@ fn matches_first_child<'a, E:TElement<'a>,N:TNode<'a, E>>(element: &N) -> bool {
 
 #[inline]
 fn matches_last_child<'a, E:TElement<'a>,N:TNode<'a, E>>(element: &N) -> bool {
-    let mut node = element.clone();
+    let mut node = *element;
     loop {
         match node.next_sibling() {
             Some(next_sibling) => {

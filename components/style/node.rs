@@ -9,8 +9,9 @@ use selectors::AttrSelector;
 use string_cache::{Atom, Namespace};
 
 
-pub trait TNode<'a, E: TElement<'a>> : Clone + Copy {
+pub trait TNode<'a, E: TElement<'a>> : Copy {
     fn parent_node(self) -> Option<Self>;
+    /// Name is prefixed to avoid a conflict with TLayoutNode.
     fn first_child(self) -> Option<Self>;
     fn prev_sibling(self) -> Option<Self>;
     fn next_sibling(self) -> Option<Self>;
@@ -19,6 +20,18 @@ pub trait TNode<'a, E: TElement<'a>> : Clone + Copy {
     fn as_element(self) -> E;
     fn match_attr(self, attr: &AttrSelector, test: |&str| -> bool) -> bool;
     fn is_html_element_in_html_document(self) -> bool;
+    fn is_dirty(self) -> bool;
+    unsafe fn set_is_dirty(self, value: bool);
+    fn must_force_reflow(self) -> bool;
+    unsafe fn set_must_force_reflow(self, value: bool);
+    fn has_dirty_descendants(self) -> bool;
+    unsafe fn set_has_dirty_descendants(self, value: bool);
+    fn has_dirty_children(self) -> bool;
+    unsafe fn set_has_dirty_children(self, value: bool);
+    fn is_fragment(self) -> bool;
+    unsafe fn set_is_fragment(self, value: bool);
+    fn has_fragment_children(self) -> bool;
+    unsafe fn set_has_fragment_children(self, value: bool);
 }
 
 pub trait TElement<'a> : Copy {
