@@ -534,7 +534,6 @@ impl<'a> FlowConstructor<'a> {
     /// to happen.
     fn build_flow_for_nonfloated_block(&mut self, node: &ThreadSafeLayoutNode)
                                        -> ConstructionResult {
-        debug!("Building flow for nonfloated block!");
         let flow = box BlockFlow::from_node(self, node) as Box<Flow>;
         self.build_flow_for_block(FlowRef::new(flow), node)
     }
@@ -543,7 +542,6 @@ impl<'a> FlowConstructor<'a> {
     /// a `BlockFlow` underneath it.
     fn build_flow_for_floated_block(&mut self, node: &ThreadSafeLayoutNode, float_kind: FloatKind)
                                     -> ConstructionResult {
-        debug!("Building flow for floated block!");
         let flow = box BlockFlow::float_from_node(self, node, float_kind) as Box<Flow>;
         self.build_flow_for_block(FlowRef::new(flow), node)
     }
@@ -752,9 +750,8 @@ impl<'a> FlowConstructor<'a> {
                 NoConstructionResult | ConstructionItemConstructionResult(_) => {}
                 FlowConstructionResult(kid_flow, _) => {
                     // Only kid flows with table-caption are matched here.
-                    if table_wrapper_flow.get().is_table_caption() {
-                        table_wrapper_flow.add_new_child(kid_flow);
-                    }
+                    assert!(kid_flow.get().is_table_caption());
+                    table_wrapper_flow.add_new_child(kid_flow);
                 }
             }
         }
