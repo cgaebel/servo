@@ -748,7 +748,7 @@ impl DisplayItem {
         for _ in range(0, level) {
             indent.push_str("| ")
         }
-        debug!("{}+ {}", indent, self);
+        error!("{}+ {}", indent, self);
         for child in self.children() {
             child.debug_with_level(level + 1);
         }

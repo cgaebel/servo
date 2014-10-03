@@ -621,9 +621,15 @@ impl<'a> NodeHelpers<'a> for JSRef<'a, Node> {
             }
 
             // Flood `is_dirty` to siblings.
-            self.set_dirty(true);
-            self.parent_node().map(|parent|
-                parent.root().children().map(|sibling| sibling.set_dirty(true)));
+
+            match self.parent_node() {
+                None         => self.set_dirty(true),
+                Some(parent) => {
+                    for sibling in parent.root().children() {
+                        sibling.set_dirty(true);
+                    }
+                }
+            }
         }
     }
 

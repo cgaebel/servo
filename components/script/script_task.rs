@@ -879,6 +879,7 @@ impl ScriptTask {
     fn force_reflow(&self, page: &Page) {
         let mut pending = page.pending_dirty_nodes.deref().borrow_mut();
         let js_runtime = self.js_runtime.deref().ptr;
+
         for &untrusted_node in pending.iter() {
             node::from_untrusted_node_address(js_runtime, untrusted_node)
                 .root()
