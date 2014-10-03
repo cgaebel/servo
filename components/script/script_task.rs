@@ -64,6 +64,7 @@ use url::Url;
 use libc::size_t;
 use std::any::{Any, AnyRefExt};
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::comm::{channel, Sender, Receiver, Select};
 use std::mem::replace;
 use std::rc::Rc;
@@ -443,7 +444,9 @@ impl ScriptTask {
             }
         };
 
-        // Squash any pending resize events in the queue.
+        let mut needs_reflow = HashSet::new();
+
+        // Squash any pending resize and reflow events in the queue.
         loop {
             match event {
                 // This has to be handled before the ResizeMsg below,
@@ -456,6 +459,15 @@ impl ScriptTask {
                     let mut page = self.page.borrow_mut();
                     let page = page.find(id).expect("resize sent to nonexistent pipeline");
                     page.resize_event.deref().set(Some(size));
+                }
+                FromConstellation(SendEventMsg(id, ReflowEvent(node_address))) => {
+                    node_address.map(|node_address| {
+                        let mut page = self.page.borrow_mut();
+                        let inner_page = page.find(id).expect("Reflow sent to nonexistent pipeline.");
+                        let mut pending = inner_page.pending_dirty_nodes.deref().borrow_mut();
+                        pending.push(node_address);
+                    });
+                    needs_reflow.insert(id);
                 }
                 _ => {
                     sequential.push(event);
@@ -503,6 +515,11 @@ impl ScriptTask {
                 FromDevtools(GetChildren(id, node_id, reply)) => self.handle_get_children(id, node_id, reply),
                 FromDevtools(GetLayout(id, node_id, reply)) => self.handle_get_layout(id, node_id, reply),
             }
+        }
+
+        // Now process any pending reflows.
+        for id in needs_reflow.into_iter() {
+            self.handle_event(id, ReflowEvent(None));
         }
 
         true
@@ -629,9 +646,9 @@ impl ScriptTask {
         self.compositor.set_ready_state(pipeline_id, FinishedLoading);
 
         if page.pending_reflows.get() > 0 {
+            debug!("Layout finished. But we still have pending reflows. Flushing.");
             page.pending_reflows.set(0);
-            page.damage();
-            page.reflow(ReflowForDisplay, self.control_chan.clone(), &*self.compositor);
+            self.force_reflow(&*page);
         }
     }
 
@@ -709,8 +726,7 @@ impl ScriptTask {
             Some((ref loaded, needs_reflow)) if *loaded == url => {
                 *page.mut_url() = Some((loaded.clone(), false));
                 if needs_reflow {
-                    page.damage();
-                    page.reflow(ReflowForDisplay, self.control_chan.clone(), &*self.compositor);
+                    self.force_reflow(&*page);
                 }
                 return;
             },
@@ -858,6 +874,23 @@ impl ScriptTask {
         self.compositor.scroll_fragment_point(pipeline_id, LayerId::null(), point);
     }
 
+    fn force_reflow(&self, page: &Page) {
+        let mut pending = page.pending_dirty_nodes.deref().borrow_mut();
+        let js_runtime = self.js_runtime.deref().ptr;
+        for &untrusted_node in pending.iter() {
+            node::from_untrusted_node_address(js_runtime, untrusted_node)
+                .root()
+                .deref()
+                .mark_dirty();
+        }
+
+        pending.clear();
+        drop(pending);
+
+        page.damage();
+        page.reflow(ReflowForDisplay, self.control_chan.clone(), &*self.compositor);
+    }
+
     /// This is the main entry point for receiving and dispatching DOM events.
     ///
     /// TODO: Actually perform DOM event dispatch.
@@ -872,7 +905,7 @@ impl ScriptTask {
 
                     let frame = page.frame();
                     if frame.is_some() {
-                        page.reflow(ReflowForDisplay, self.control_chan.clone(), &*self.compositor)
+                        self.force_reflow(&*page);
                     }
 
                     let fragment_node =
@@ -906,8 +939,8 @@ impl ScriptTask {
                 }
             }
 
-            // FIXME(pcwalton): This reflows the entire document and is not incremental-y.
-            ReflowEvent => {
+            ReflowEvent(to_dirty) => {
+                assert!(to_dirty.is_none(), "Reflows should have been coalesced!");
                 debug!("script got reflow event");
                 let page = get_page(&*self.page.borrow(), pipeline_id);
                 let frame = page.frame();
@@ -916,8 +949,7 @@ impl ScriptTask {
                     if in_layout {
                         page.pending_reflows.set(page.pending_reflows.get() + 1);
                     } else {
-                        page.damage();
-                        page.reflow(ReflowForDisplay, self.control_chan.clone(), &*self.compositor)
+                        self.force_reflow(&*page);
                     }
                 }
             }
@@ -1022,10 +1054,7 @@ impl ScriptTask {
 
                         if target_compare {
                             if mouse_over_targets.is_some() {
-                                page.damage();
-                                page.reflow(ReflowForDisplay,
-                                            self.control_chan.clone(),
-                                            &*self.compositor);
+                                self.force_reflow(&*page);
                             }
                             *mouse_over_targets = Some(target_list);
                         }

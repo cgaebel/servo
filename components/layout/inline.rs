@@ -621,7 +621,7 @@ impl LineBreaker {
                 true
             },
             Some((None, None)) => {
-                error!("LineBreaker: This split case makes no sense!");
+                debug!("LineBreaker: Nothing to do.");
                 true
             },
         }
@@ -1265,4 +1265,3 @@ impl InlineMetrics {
         }
     }
 }
-

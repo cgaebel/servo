@@ -563,6 +563,10 @@ impl<'ln> MatchMethods for LayoutNode<'ln> {
                 }
                 StyleWasShared(index) => layout_context.style_sharing_candidate_cache().touch(index),
             }
+
+            for kid in self.children() {
+                unsafe { kid.set_is_dirty(true); }
+            }
         }
 
         match *parent_bf {

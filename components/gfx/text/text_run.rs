@@ -6,6 +6,7 @@ use font::{Font, RunMetrics, FontMetrics};
 use servo_util::geometry::Au;
 use servo_util::range::Range;
 use servo_util::vec::{Comparator, FullBinarySearchMethods};
+use std::fmt;
 use std::slice::Items;
 use sync::Arc;
 use text::glyph::{CharIndex, GlyphStore};
@@ -21,6 +22,13 @@ pub struct TextRun {
     pub font_metrics: FontMetrics,
     /// The glyph runs that make up this text run.
     pub glyphs: Arc<Vec<GlyphRun>>,
+}
+
+
+impl fmt::Show for TextRun {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.text.as_slice())
+    }
 }
 
 /// A single series of glyphs within a text run.

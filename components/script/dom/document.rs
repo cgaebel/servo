@@ -195,25 +195,7 @@ impl<'a> DocumentHelpers<'a> for JSRef<'a, Document> {
     }
 
     fn content_changed(self, node: JSRef<Node>) {
-        if !node.get_dirty() {
-            // Flood `has_dirty_descendants` up.
-            let mut ancestor = node.clone();
-            loop {
-                match ancestor.parent_node() {
-                    None => break,
-                    Some(parent) => ancestor = *parent.root(),
-                }
-
-                if ancestor.get_has_dirty_descendants() {
-                    break
-                }
-                ancestor.set_has_dirty_descendants(true);
-            }
-
-            // Flood `is_dirty` down.
-            node.set_dirty(true);
-        }
-
+        node.mark_dirty();
         self.reflow();
     }
 

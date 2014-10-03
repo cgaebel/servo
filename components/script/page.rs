@@ -14,8 +14,7 @@ use dom::window::Window;
 use layout_interface::{HitTestResponse, MouseOverResponse, ReflowForDisplay};
 use layout_interface::{GetRPCMsg, LayoutChan, LayoutRPC};
 use layout_interface::{Reflow, ReflowGoal, ReflowMsg};
-use layout_interface::UntrustedNodeAddress;
-use script_traits::ScriptControlChan;
+use script_traits::{UntrustedNodeAddress, ScriptControlChan};
 
 use geom::point::Point2D;
 use js::rust::Cx;
@@ -70,6 +69,10 @@ pub struct Page {
 
     /// Pending resize event, if any.
     pub resize_event: Untraceable<Cell<Option<WindowSizeData>>>,
+
+    /// Pending nodes that want to be marked dirty, but couldn't because reflow
+    /// was running.
+    pub pending_dirty_nodes: Untraceable<RefCell<Vec<UntrustedNodeAddress>>>,
 
     /// Pending scroll to fragment event, if any
     pub fragment_name: RefCell<Option<String>>,
@@ -149,6 +152,7 @@ impl Page {
             next_subpage_id: Traceable::new(Cell::new(SubpageId(0))),
             resize_event: Untraceable::new(Cell::new(None)),
             fragment_name: RefCell::new(None),
+            pending_dirty_nodes: Untraceable::new(RefCell::new(Vec::new())),
             last_reflow_id: Traceable::new(Cell::new(0)),
             resource_task: Untraceable::new(resource_task),
             constellation_chan: Untraceable::new(constellation_chan),

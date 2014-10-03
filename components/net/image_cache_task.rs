@@ -187,9 +187,9 @@ impl ImageCache {
 
                     self.store_image(url, image)
                 }
-                GetImage(url, response) => self.get_image(url, response),
+                GetImage(url, response) => self.get_image(&url, response),
                 WaitForImage(url, response) => {
-                    self.wait_for_image(url, response)
+                    self.wait_for_image(&url, response)
                 }
                 WaitForStore(chan) => store_chan = Some(chan),
                 WaitForStorePrefetched(chan) => store_prefetched_chan = Some(chan),
@@ -227,8 +227,8 @@ impl ImageCache {
         }
     }
 
-    fn get_state(&self, url: Url) -> ImageState {
-        match self.state_map.find(&url) {
+    fn get_state(&self, url: &Url) -> ImageState {
+        match self.state_map.find(url) {
             Some(state) => state.clone(),
             None => Init
         }
@@ -239,7 +239,7 @@ impl ImageCache {
     }
 
     fn prefetch(&mut self, url: Url) {
-        match self.get_state(url.clone()) {
+        match self.get_state(&url) {
             Init => {
                 let to_cache = self.chan.clone();
                 let resource_task = self.resource_task.clone();
@@ -270,7 +270,7 @@ impl ImageCache {
     }
 
     fn store_prefetched_image_data(&mut self, url: Url, data: Result<Vec<u8>, ()>) {
-        match self.get_state(url.clone()) {
+        match self.get_state(&url) {
           Prefetching(next_step) => {
             match data {
               Ok(data) => {
@@ -282,7 +282,7 @@ impl ImageCache {
               }
               Err(..) => {
                 self.set_state(url.clone(), Failed);
-                self.purge_waiters(url, || ImageFailed);
+                self.purge_waiters(&url, || ImageFailed);
               }
             }
           }
@@ -298,7 +298,7 @@ impl ImageCache {
     }
 
     fn decode(&mut self, url: Url) {
-        match self.get_state(url.clone()) {
+        match self.get_state(&url) {
             Init => fail!("decoding image before prefetch"),
 
             Prefetching(DoNotDecode) => {
@@ -338,16 +338,16 @@ impl ImageCache {
 
     fn store_image(&mut self, url: Url, image: Option<Arc<Box<Image>>>) {
 
-        match self.get_state(url.clone()) {
+        match self.get_state(&url) {
           Decoding => {
             match image {
               Some(image) => {
                 self.set_state(url.clone(), Decoded(image.clone()));
-                self.purge_waiters(url, || ImageReady(image.clone()) );
+                self.purge_waiters(&url, || ImageReady(image.clone()) );
               }
               None => {
                 self.set_state(url.clone(), Failed);
-                self.purge_waiters(url, || ImageFailed );
+                self.purge_waiters(&url, || ImageFailed );
               }
             }
           }
@@ -363,8 +363,8 @@ impl ImageCache {
 
     }
 
-    fn purge_waiters(&mut self, url: Url, f: || -> ImageResponseMsg) {
-        match self.wait_map.pop(&url) {
+    fn purge_waiters(&mut self, url: &Url, f: || -> ImageResponseMsg) {
+        match self.wait_map.pop(url) {
             Some(waiters) => {
                 let mut items = waiters.lock();
                 for response in items.iter() {
@@ -375,8 +375,8 @@ impl ImageCache {
         }
     }
 
-    fn get_image(&self, url: Url, response: Sender<ImageResponseMsg>) {
-        match self.get_state(url.clone()) {
+    fn get_image(&self, url: &Url, response: Sender<ImageResponseMsg>) {
+        match self.get_state(url) {
             Init => fail!("request for image before prefetch"),
             Prefetching(DoDecode) => response.send(ImageNotReady),
             Prefetching(DoNotDecode) | Prefetched(..) => fail!("request for image before decode"),
@@ -386,23 +386,23 @@ impl ImageCache {
         }
     }
 
-    fn wait_for_image(&mut self, url: Url, response: Sender<ImageResponseMsg>) {
-        match self.get_state(url.clone()) {
+    fn wait_for_image(&mut self, url: &Url, response: Sender<ImageResponseMsg>) {
+        match self.get_state(url) {
             Init => fail!("request for image before prefetch"),
 
             Prefetching(DoNotDecode) | Prefetched(..) => fail!("request for image before decode"),
 
             Prefetching(DoDecode) | Decoding => {
                 // We don't have this image yet
-                if self.wait_map.contains_key(&url) {
-                    let waiters = self.wait_map.find_mut(&url).unwrap();
+                if self.wait_map.contains_key(url) {
+                    let waiters = self.wait_map.find_mut(url).unwrap();
                     let mut response = Some(response);
                     let mut items = waiters.lock();
                     items.push(response.take().unwrap());
                 } else {
                     let response = vec!(response);
                     let wrapped = Arc::new(Mutex::new(response));
-                    self.wait_map.insert(url, wrapped);
+                    self.wait_map.insert((*url).clone(), wrapped);
                 }
             }
 

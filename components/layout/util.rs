@@ -13,7 +13,8 @@ use libc::uintptr_t;
 use script::dom::bindings::js::JS;
 use script::dom::bindings::utils::Reflectable;
 use script::dom::node::{Node, SharedLayoutData};
-use script::layout_interface::{LayoutChan, UntrustedNodeAddress, TrustedNodeAddress};
+use script::layout_interface::{LayoutChan, TrustedNodeAddress};
+use script_traits::UntrustedNodeAddress;
 use std::mem;
 use std::cell::{Ref, RefMut};
 use style::ComputedValues;
@@ -161,4 +162,3 @@ impl ToGfxColor for style::computed_values::RGBA {
         gfx::color::rgba(self.red, self.green, self.blue, self.alpha)
     }
 }
-

@@ -47,7 +47,8 @@ use dom::window::Window;
 use geom::rect::Rect;
 use html::hubbub_html_parser::build_element_from_tag;
 use layout_interface::{ContentBoxResponse, ContentBoxesResponse, LayoutRPC,
-                       LayoutChan, ReapLayoutDataMsg, TrustedNodeAddress, UntrustedNodeAddress};
+                       LayoutChan, ReapLayoutDataMsg, TrustedNodeAddress};
+use script_traits::UntrustedNodeAddress;
 use devtools_traits::NodeInfo;
 use servo_util::geometry::Au;
 use servo_util::str::{DOMString, null_str_as_empty};
@@ -431,6 +432,8 @@ pub trait NodeHelpers<'a> {
     fn get_has_dirty_descendants(self) -> bool;
     fn set_has_dirty_descendants(self, state: bool);
 
+    fn mark_dirty(self);
+
     fn to_trusted_node_address(self) -> TrustedNodeAddress;
 
     fn get_bounding_content_box(self) -> Rect<Au>;
@@ -599,6 +602,29 @@ impl<'a> NodeHelpers<'a> for JSRef<'a, Node> {
             flags.remove(HasDirtyDescendants);
         }
         self.flags.set(flags)
+    }
+
+    fn mark_dirty(self) {
+        if !self.get_dirty() {
+            // Flood `has_dirty_descendants` up.
+            let mut ancestor = self.clone();
+            loop {
+                match ancestor.parent_node() {
+                    None => break,
+                    Some(parent) => ancestor = *parent.root(),
+                }
+
+                if ancestor.get_has_dirty_descendants() {
+                    break
+                }
+                ancestor.set_has_dirty_descendants(true);
+            }
+
+            // Flood `is_dirty` to siblings.
+            self.set_dirty(true);
+            self.parent_node().map(|parent|
+                parent.root().children().map(|sibling| sibling.set_dirty(true)));
+        }
     }
 
     /// Iterates over this node and all its descendants, in preorder.

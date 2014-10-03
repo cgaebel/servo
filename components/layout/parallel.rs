@@ -374,6 +374,11 @@ fn recalc_style_for_node(mut unsafe_layout_node: UnsafeLayoutNode,
             }
             StyleWasShared(index) => style_sharing_candidate_cache.touch(index),
         }
+
+        // Flood dirty bits down to kids.
+        for kid in node.children() {
+            unsafe { kid.set_is_dirty(true); }
+        }
     }
 
     // Prepare for flow construction by counting the node's children and storing that count.

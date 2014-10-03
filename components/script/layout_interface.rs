@@ -14,7 +14,7 @@ use geom::point::Point2D;
 use geom::rect::Rect;
 use js::jsapi::JSTracer;
 use libc::c_void;
-use script_traits::{ScriptControlChan, OpaqueScriptLayoutChannel};
+use script_traits::{UntrustedNodeAddress, ScriptControlChan, OpaqueScriptLayoutChannel};
 use servo_msg::constellation_msg::WindowSizeData;
 use servo_util::geometry::Au;
 use std::any::{Any, AnyRefExt};
@@ -83,10 +83,6 @@ impl JSTraceable for TrustedNodeAddress {
         }
     }
 }
-
-/// The address of a node. Layout sends these back. They must be validated via
-/// `from_untrusted_node_address` before they can be used, because we do not trust layout.
-pub type UntrustedNodeAddress = *const c_void;
 
 pub struct ContentBoxResponse(pub Rect<Au>);
 pub struct ContentBoxesResponse(pub Vec<Rect<Au>>);
