@@ -51,6 +51,9 @@ pub struct Opts {
     /// and cause it to produce output on that interval (`-m`).
     pub memory_profiler_period: Option<f64>,
 
+    /// Enable incremental reflow (`-n`).
+    pub incremental_reflow: bool,
+
     /// Enable experimental web features (`-e`).
     pub enable_experimental: bool,
 
@@ -116,6 +119,7 @@ pub fn from_cmdline_args(args: &[String]) -> Option<Opts> {
         getopts::optopt("t", "threads", "Number of render threads", "1"),
         getopts::optflagopt("p", "profile", "Profiler flag and output interval", "10"),
         getopts::optflagopt("m", "memory-profile", "Memory profiler flag and output interval", "10"),
+        getopts::optflag("n", "incremental-reflow", "Enable incremental reflow."),
         getopts::optflag("x", "exit", "Exit after load flag"),
         getopts::optopt("y", "layout-threads", "Number of threads to use for layout", "1"),
         getopts::optflag("z", "headless", "Headless mode"),
@@ -191,6 +195,8 @@ pub fn from_cmdline_args(args: &[String]) -> Option<Opts> {
         from_str(period.as_slice()).unwrap()
     });
 
+    let incremental_reflow = opt_match.opt_present("n");
+
     let cpu_painting = opt_match.opt_present("c");
 
     let mut layout_threads: uint = match opt_match.opt_str("y") {
@@ -226,6 +232,7 @@ pub fn from_cmdline_args(args: &[String]) -> Option<Opts> {
         device_pixels_per_px: device_pixels_per_px,
         time_profiler_period: time_profiler_period,
         memory_profiler_period: memory_profiler_period,
+        incremental_reflow: incremental_reflow,
         enable_experimental: opt_match.opt_present("e"),
         layout_threads: layout_threads,
         exit_after_load: opt_match.opt_present("x"),

@@ -335,7 +335,7 @@ fn recalc_style_for_node(mut unsafe_layout_node: UnsafeLayoutNode,
     // Just needs to be wrapped in an option for `match_node`.
     let some_bf = Some(bf);
 
-    if node.is_dirty() {
+    if !layout_context.shared.opts.incremental_reflow || node.is_dirty() {
         // Initialize layout data.
         //
         // FIXME(pcwalton): Stop allocating here. Ideally this should just be done by the HTML
@@ -389,7 +389,7 @@ fn recalc_style_for_node(mut unsafe_layout_node: UnsafeLayoutNode,
             let layout_kid = unsafe {
                 layout_node_from_unsafe_layout_node(&unsafe_layout_kid)
             };
-            if layout_kid.is_dirty() || layout_kid.has_dirty_descendants() ||
+            if !layout_context.shared.opts.incremental_reflow || layout_kid.is_dirty() || layout_kid.has_dirty_descendants() ||
                     layout_kid.is_fragment() {
                 dirty_child_count += 1;
             }
@@ -427,7 +427,7 @@ fn recalc_style_for_node(mut unsafe_layout_node: UnsafeLayoutNode,
             let layout_kid = unsafe {
                 layout_node_from_unsafe_layout_node(&unsafe_layout_kid)
             };
-            if layout_kid.is_dirty() || layout_kid.has_dirty_descendants() ||
+            if !layout_context.shared.opts.incremental_reflow || layout_kid.is_dirty() || layout_kid.has_dirty_descendants() ||
                     layout_kid.is_fragment() {
                 proxy.push(WorkUnit {
                     fun: recalc_style_for_node,
@@ -453,7 +453,7 @@ fn construct_flows<'a>(unsafe_layout_node: &mut UnsafeLayoutNode,
         };
 
         // Construct flows for this node, if necessary.
-        if node.is_dirty() || node.has_dirty_descendants() || node.is_fragment() {
+        if !layout_context.shared.opts.incremental_reflow || node.is_dirty() || node.has_dirty_descendants() || node.is_fragment() {
             let mut flow_constructor = FlowConstructor::new(layout_context);
             flow_constructor.process(&ThreadSafeLayoutNode::new(&node));
 
