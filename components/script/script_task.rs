@@ -649,6 +649,8 @@ impl ScriptTask {
             debug!("Layout finished. But we still have pending reflows. Flushing.");
             page.pending_reflows.set(0);
             self.force_reflow(&*page);
+        } else {
+            page.damaged.set(false);
         }
     }
 
