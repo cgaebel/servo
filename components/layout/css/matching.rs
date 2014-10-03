@@ -533,7 +533,7 @@ impl<'ln> MatchMethods for LayoutNode<'ln> {
                                 parent_bf: &mut Option<BloomFilter>,
                                 applicable_declarations: &mut ApplicableDeclarations,
                                 parent: Option<LayoutNode>) {
-        if self.is_dirty() {
+        if !layout_context.shared.opts.incremental_reflow || self.is_dirty() {
             self.initialize_layout_data(layout_context.shared.layout_chan.clone());
 
             // First, check to see whether we can share a style with someone.
@@ -574,7 +574,7 @@ impl<'ln> MatchMethods for LayoutNode<'ln> {
             Some(ref mut pbf) => self.insert_into_bloom_filter(pbf),
         }
 
-        if self.has_dirty_descendants() || self.has_fragment_children() {
+        if !layout_context.shared.opts.incremental_reflow || self.has_dirty_descendants() || self.has_fragment_children() {
             for kid in self.children() {
                 kid.recalc_style_for_subtree(stylist,
                                              layout_context,
@@ -590,7 +590,7 @@ impl<'ln> MatchMethods for LayoutNode<'ln> {
         }
 
         // Construct flows if necessary.
-        if self.is_dirty() || self.has_dirty_descendants() || self.is_fragment() {
+        if !layout_context.shared.opts.incremental_reflow || self.is_dirty() || self.has_dirty_descendants() || self.is_fragment() {
             let layout_node = ThreadSafeLayoutNode::new(self);
             let mut flow_constructor = FlowConstructor::new(layout_context);
             flow_constructor.process(&layout_node);
