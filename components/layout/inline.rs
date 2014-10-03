@@ -318,8 +318,6 @@ impl LineBreaker {
 
         let mut old_fragments = mem::replace(&mut flow.fragments, InlineFragments::new());
 
-        debug!("old fragments: {}", old_fragments.len());
-
         { // Enter a new scope so that old_fragment_iter's borrow is released
             let mut old_fragment_iter = old_fragments.fragments.iter();
             loop {

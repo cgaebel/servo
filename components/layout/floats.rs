@@ -11,11 +11,6 @@ use std::fmt;
 use style::computed_values::float;
 use sync::Arc;
 
-use log;
-use std::rt;
-use std::str;
-use std::io::MemWriter;
-
 /// The kind of float: left or right.
 #[deriving(Clone, Encodable, Show)]
 pub enum FloatKind {
@@ -281,12 +276,6 @@ impl Floats {
 
     /// Adds a new float to the list.
     pub fn add_float(&mut self, info: &PlacementInfo) {
-        if log_enabled!(log::DEBUG) {
-            let mut w = MemWriter::new();
-            rt::backtrace::write(&mut w).unwrap();
-            debug!("Backtrace: {}", str::from_utf8(w.get_ref()).unwrap());
-        }
-
         let new_info;
         {
             let list = self.list.get_mut();

@@ -330,7 +330,7 @@ fn recalc_style_for_node(mut unsafe_layout_node: UnsafeLayoutNode,
     // Just needs to be wrapped in an option for `match_node`.
     let some_bf = Some(bf);
 
-    if node.needs_style_recalc(&parent_opt) {
+    if !layout_context.shared.opts.incremental_layout || node.needs_style_recalc(&parent_opt) {
         debug!("[{}] Recalculating style.", tid());
         // Initialize layout data.
         //
@@ -374,6 +374,20 @@ fn recalc_style_for_node(mut unsafe_layout_node: UnsafeLayoutNode,
         }
     }
 
+    // Not unsafe, since this is called in a top-down traversal. We're allowed
+    // to access our parents. However, issuing a borrow could lead to race
+    // conditions.
+    unsafe {
+        let parent_restyle_damage =
+            parent_opt.as_ref().map(|parent| {
+                let parent_layout_data = parent.borrow_layout_data_unchecked();
+                let ref parent_layout_data = (&*parent_layout_data).as_ref().expect("no parent layout data!?");
+                parent_layout_data.data.restyle_damage.propagate_down()
+            }).unwrap_or(RestyleDamage::empty());
+        let tsln = ThreadSafeLayoutNode::new(&node);
+        tsln.set_restyle_damage(tsln.restyle_damage() | parent_restyle_damage);
+    }
+
     debug!("[{}] End style recalc for {:x}. damage={}",
            tid(),
            layout_node_to_unsafe_layout_node(&node).val0(),
@@ -387,7 +401,8 @@ fn recalc_style_for_node(mut unsafe_layout_node: UnsafeLayoutNode,
             let layout_kid = unsafe {
                 layout_node_from_unsafe_layout_node(&unsafe_layout_kid)
             };
-            if layout_kid.needs_style_recalc(&Some(node))
+            if !layout_context.shared.opts.incremental_layout
+                || layout_kid.needs_style_recalc(&Some(node))
                 || layout_kid.has_dirty_descendants()
                 || layout_kid.is_fragment() {
                 dirty_child_count += 1;
@@ -427,7 +442,8 @@ fn recalc_style_for_node(mut unsafe_layout_node: UnsafeLayoutNode,
             let layout_kid = unsafe {
                 layout_node_from_unsafe_layout_node(&unsafe_layout_kid)
             };
-            if layout_kid.needs_style_recalc(&Some(node))
+            if !layout_context.shared.opts.incremental_layout
+                || layout_kid.needs_style_recalc(&Some(node))
                 || layout_kid.has_dirty_descendants()
                 || layout_kid.is_fragment() {
                 proxy.push(WorkUnit {
@@ -463,7 +479,9 @@ fn construct_flows<'a>(unsafe_layout_node: &mut UnsafeLayoutNode,
             }
 
 
-            if !tsln.restyle_damage().is_empty() || node.has_dirty_descendants() {
+            if !layout_context.shared.opts.incremental_layout
+            || !tsln.restyle_damage().is_empty()
+            || node.has_dirty_descendants() {
                 debug!("[{}] constructing new flow for {:x}, dmg={}", tid(), unsafe_layout_node.val0(), tsln.restyle_damage());
                 let mut flow_constructor = FlowConstructor::new(layout_context);
                 flow_constructor.process(&tsln);
@@ -635,7 +653,7 @@ fn build_display_list(mut unsafe_flow: UnsafeFlow,
                 let base = flow::mut_base(flow.get_mut());
                 let needs_repaint = base.restyle_damage.contains(Repaint);
                 base.restyle_damage.remove(Repaint);
-                needs_repaint || true
+                needs_repaint || true // TODO(cgaebel): no incremental painting yet.
             };
 
             if needs_repaint {

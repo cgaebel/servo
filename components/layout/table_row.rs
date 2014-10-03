@@ -216,9 +216,7 @@ impl Flow for TableRowFlow {
         let inline_size_computer = InternalTable;
         inline_size_computer.compute_used_inline_size(&mut self.block_flow, ctx, containing_block_inline_size);
 
-        if !self.col_inline_sizes.is_empty() {
-            self.block_flow.propagate_assigned_inline_size_to_children(inline_start_content_edge, Au(0), Some(self.col_inline_sizes.clone()));
-        }
+        self.block_flow.propagate_assigned_inline_size_to_children(inline_start_content_edge, Au(0), Some(self.col_inline_sizes.clone()));
     }
 
     fn assign_block_size<'a>(&mut self, ctx: &'a LayoutContext<'a>) {

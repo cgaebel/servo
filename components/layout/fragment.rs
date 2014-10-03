@@ -1544,7 +1544,7 @@ impl Fragment {
         match self.specific {
             InlineAbsoluteHypotheticalFragment(ref mut info) => {
                 let block_flow = info.flow_ref.get_mut().as_block();
-                block_flow.base.position.size.inline = 
+                block_flow.base.position.size.inline =
                     block_flow.base.intrinsic_inline_sizes.preferred_inline_size +
                     block_flow.base.intrinsic_inline_sizes.surround_inline_size;
 
@@ -1560,8 +1560,6 @@ impl Fragment {
             ScannedTextFragment(_) => {
                 // Scanned text fragments will have already had their content inline-sizes assigned by this
                 // point.
-                debug!("A self.border_box.size.inline = self.border_box.size.inline + noncontent_inline_size => {} = {} + {}",
-                       self.border_box.size.inline, self.border_box.size.inline, noncontent_inline_size);
                 self.border_box.size.inline = self.border_box.size.inline + noncontent_inline_size
             }
             ImageFragment(ref mut image_fragment_info) => {
@@ -1602,9 +1600,6 @@ impl Fragment {
                                                                 style_min_inline_size,
                                                                 style_max_inline_size,
                                                                 container_inline_size);
-
-                debug!("B self.border_box.size.inline = self.border_box.size.inline + noncontent_inline_size => {} = {} + {}",
-                       self.border_box.size.inline, self.border_box.size.inline, noncontent_inline_size);
 
                 self.border_box.size.inline = inline_size + noncontent_inline_size;
                 image_fragment_info.computed_inline_size = Some(inline_size);

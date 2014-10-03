@@ -184,6 +184,8 @@ impl<'a> PostorderFlowTraversal for BubbleISizesTraversal<'a> {
 
     #[inline]
     fn should_process(&mut self, flow: &mut Flow) -> bool {
+        if !self.layout_context.shared.opts.incremental_layout { return true; }
+
         let ret = flow::base(flow).restyle_damage.contains(incremental::BubbleISizes);
         debug!("[{}] BubbleISizes {}.should_process={} pos={}", tid(), flow::base(flow).debug_id(), ret, flow::base(flow).position);
         ret
@@ -204,6 +206,8 @@ impl<'a> PreorderFlowTraversal for AssignISizesTraversal<'a> {
 
     #[inline]
     fn should_process(&mut self, flow: &mut Flow) -> bool {
+        if !self.layout_context.shared.opts.incremental_layout { return true; }
+
         let ret = flow::base(flow).restyle_damage.contains(incremental::Reflow);
         debug!("[{}] AssignISizes {}.should_process={} pos={}", tid(), flow::base(flow).debug_id(), ret, flow::base(flow).position);
         ret
@@ -235,6 +239,8 @@ impl<'a> PostorderFlowTraversal for AssignBSizesAndStoreOverflowTraversal<'a> {
 
     #[inline]
     fn should_process(&mut self, flow: &mut Flow) -> bool {
+        if !self.layout_context.shared.opts.incremental_layout { return true; }
+
         let base = flow::base(flow);
         let ret = base.restyle_damage.contains(incremental::Reflow);
         debug!("[{}] AssignBSizes {}.should_process={} pos={}", tid(), base.debug_id(), ret, flow::base(flow).position);

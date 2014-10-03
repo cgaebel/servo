@@ -554,19 +554,8 @@ impl<'ln> MatchMethods for LayoutNode<'ln> {
                                 parent_bf: &mut Option<BloomFilter>,
                                 applicable_declarations: &mut ApplicableDeclarations,
                                 parent: Option<LayoutNode>) {
-        if self.needs_style_recalc(&parent) {
+        if !layout_context.shared.opts.incremental_layout || self.needs_style_recalc(&parent) {
             self.initialize_layout_data(layout_context.shared.layout_chan.clone());
-
-            if self.is_fragment() {
-                let mut layout_data = self.mutate_layout_data();
-                // Drop the old style, to force reflow.
-                match layout_data.as_mut() {
-                    None => fail!("No layout data."),
-                    Some(ref mut layout_data) => {
-                        layout_data.shared_data.style = None;
-                    }
-                }
-            }
 
             // First, check to see whether we can share a style with someone.
             let sharing_result = unsafe {
@@ -597,35 +586,37 @@ impl<'ln> MatchMethods for LayoutNode<'ln> {
                     layout_context.style_sharing_candidate_cache().touch(index);
                 }
             }
-        } else {
+        }
 
-            // Not unsafe, since this is called in a top-down traversal, we're
-            // allowed to access our parents. However, issuing a borrow could lead
-            // to race conditions.
-            unsafe {
-                let restyle_damage =
-                    match parent {
-                        None => RestyleDamage::empty(),
-                        Some(parent_node) => {
-                            let parent_layout_data = parent_node.borrow_layout_data_unchecked();
-                            match *parent_layout_data {
-                                None => fail!("no parent data?!"),
-                                Some(ref parent_layout_data) =>
-                                    parent_layout_data.data.restyle_damage.propagate_down()
-                            }
+        // Not unsafe, since this is called in a top-down traversal, we're
+        // allowed to access our parents. However, issuing a borrow could lead
+        // to race conditions.
+        unsafe {
+            let restyle_damage =
+                match parent {
+                    None => RestyleDamage::empty(),
+                    Some(parent_node) => {
+                        let parent_layout_data = parent_node.borrow_layout_data_unchecked();
+                        match *parent_layout_data {
+                            None => fail!("no parent data?!"),
+                            Some(ref parent_layout_data) =>
+                                parent_layout_data.data.restyle_damage.propagate_down()
                         }
-                    };
+                    }
+                };
 
-                ThreadSafeLayoutNode::new(self).set_restyle_damage(restyle_damage);
-            }
-        };
+            let tsln = ThreadSafeLayoutNode::new(self);
+            tsln.set_restyle_damage(tsln.restyle_damage() | restyle_damage);
+        }
 
         match *parent_bf {
             None => {},
             Some(ref mut pbf) => self.insert_into_bloom_filter(pbf),
         }
 
-        if self.has_dirty_descendants() || self.has_fragment_children() {
+        if !layout_context.shared.opts.incremental_layout
+        || self.has_dirty_descendants()
+        || self.has_fragment_children() {
             for kid in self.children() {
                 kid.recalc_style_for_subtree(stylist,
                                              layout_context,
@@ -635,21 +626,23 @@ impl<'ln> MatchMethods for LayoutNode<'ln> {
             }
         }
 
-        unsafe { self.set_has_dirty_children(false); }
-
         match *parent_bf {
             None => {},
             Some(ref mut pbf) => self.remove_from_bloom_filter(pbf),
         }
 
         // Construct flows if necessary.
-        if self.needs_style_recalc(&parent) || self.has_dirty_descendants() || self.is_fragment() {
+        if !layout_context.shared.opts.incremental_layout
+        || self.needs_style_recalc(&parent)
+        || self.has_dirty_descendants()
+        || self.is_fragment() {
             let layout_node = ThreadSafeLayoutNode::new(self);
             let mut flow_constructor = FlowConstructor::new(layout_context);
             flow_constructor.process(&layout_node);
 
             unsafe {
                 self.set_is_dirty(false);
+                self.set_must_force_reflow(false);
                 self.set_has_dirty_children(false);
                 self.set_has_dirty_descendants(false);
             }

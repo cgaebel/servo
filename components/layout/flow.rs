@@ -1219,6 +1219,13 @@ impl<'a> MutableFlowUtils for &'a mut Flow + 'a {
 }
 
 impl MutableOwnedFlowUtils for FlowRef {
+    /// Set absolute descendants for this flow.
+    ///
+    /// Set yourself as the Containing Block for all the absolute descendants.
+    ///
+    /// This is called during flow construction, so nothing else can be accessing the descendant
+    /// flows. This is enforced by the fact that we have a mutable `FlowRef`, which only flow
+    /// construction is allowed to possess.
     fn set_absolute_descendants(&mut self, abs_descendants: AbsDescendants) {
         let this = self.clone();
 

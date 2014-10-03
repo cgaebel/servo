@@ -937,13 +937,6 @@ impl<'a> PostorderNodeMutTraversal for FlowConstructor<'a> {
     // TODO: This should actually consult the table in that section to get the
     // final computed value for 'display'.
     fn process(&mut self, node: &ThreadSafeLayoutNode) -> bool {
-        // TODO(cgaebel): I don' think this handles sibling selectors properly.
-        if !node.ts_is_dirty() && !node.ts_has_dirty_descendants() && node.restyle_damage().is_empty() {
-            // Just reuse the existing flow.
-            debug!("[{}] Node isn't dirty nor has dirty descendants. Skipping flow construction.", tid());
-            return true;
-        }
-
         // Get the `display` property for this node, and determine whether this node is floated.
         let (display, float, positioning) = match node.type_id() {
             None => {
@@ -1255,29 +1248,24 @@ impl FlowConstructionUtils for FlowRef {
     /// Adds a new flow as a child of this flow. Fails if this flow is marked as a leaf.
     ///
     /// This must not be public because only the layout constructor can do this.
-    fn add_new_child(&mut self, new_child: FlowRef) {
+    fn add_new_child(&mut self, mut new_child: FlowRef) {
         {
             let base = flow::mut_base(self.get_mut());
-            let child_base = flow::base(new_child.get());
-            let _ = base.parallel.children_count.fetch_add(1, Relaxed);
+            let child_base = flow::mut_base(new_child.get_mut());
+
             let damage = child_base.restyle_damage.propagate_up();
             debug!("[{}] Propagating up from {} to {}: {}",
                    tid(),
-                   flow::base(new_child.get()).debug_id(),
+                   child_base.debug_id(),
                    base.debug_id(),
                    damage);
             base.restyle_damage.insert(damage);
         }
 
-        if !new_child.get().is_absolutely_positioned() {
-            let base = flow::mut_base(self.get_mut());
-            drop(base.parallel
-                     .in_flow_children_and_absolute_descendant_count
-                     .fetch_add(1, Relaxed));
-            base.parallel.in_flow_children_count += 1;
-        }
-
         self.push_back(new_child);
+        let base = flow::mut_base(self.get_mut());
+        let _ = base.parallel.children_count.fetch_add(1, Relaxed);
+        let _ = base.parallel.in_flow_children_and_absolute_descendant_count.fetch_add(1, Relaxed);
     }
 
     /// Finishes a flow. Once a flow is finished, no more child flows or fragments may be added to
