@@ -383,7 +383,7 @@ fn recalc_style_for_node(mut unsafe_layout_node: UnsafeLayoutNode,
 
     // Prepare for flow construction by counting the node's children and storing that count.
     let mut dirty_child_count = 0u;
-    if node.has_dirty_descendants() || node.has_fragment_children() {
+    if !layout_context.shared.opts.incremental_reflow || node.has_dirty_descendants() || node.has_fragment_children() {
         for kid in node.children() {
             let unsafe_layout_kid = layout_node_to_unsafe_layout_node(&kid);
             let layout_kid = unsafe {
