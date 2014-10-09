@@ -794,7 +794,9 @@ impl LayoutTask {
 
                     // Flush out double-reflow bugs. Reflow should be idempotent.
                     if !cfg!(ndebug) {
+                        unsafe { *shared_layout_ctx.double_reflow.get() = true };
                         self.solve_constraints(layout_root.get_mut(), &layout_ctx);
+                        unsafe { *shared_layout_ctx.double_reflow.get() = false };
                     }
                 }
                 Some(_) => {
@@ -804,7 +806,7 @@ impl LayoutTask {
                     // Flush out double-reflow bugs. Reflow should be idempotent.
                     if !cfg!(ndebug) {
                         unsafe { *shared_layout_ctx.double_reflow.get() = true };
-                        //self.solve_constraints_parallel(data, rw_data, &mut layout_root, &mut shared_layout_ctx);
+                        self.solve_constraints_parallel(data, rw_data, &mut layout_root, &mut shared_layout_ctx);
                         unsafe { *shared_layout_ctx.double_reflow.get() = false };
                     }
                 }
