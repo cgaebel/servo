@@ -794,7 +794,7 @@ impl LayoutTask {
 
                     // Flush out double-reflow bugs. Reflow should be idempotent.
                     if !cfg!(ndebug) {
-                        //self.solve_constraints(layout_root.get_mut(), &layout_ctx);
+                        self.solve_constraints(layout_root.get_mut(), &layout_ctx);
                     }
                 }
                 Some(_) => {
