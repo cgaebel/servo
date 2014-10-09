@@ -58,7 +58,7 @@ use servo_util::task::spawn_named_with_send_on_failure;
 use servo_util::time::{TimeProfilerChan, profile};
 use servo_util::time;
 use servo_util::workqueue::WorkQueue;
-use std::cell::Cell;
+use std::cell::{Cell, UnsafeCell};
 use std::comm::{channel, Sender, Receiver, Select};
 use std::mem;
 use std::ptr;
@@ -194,7 +194,9 @@ pub struct AssignISizesTraversal<'a> {
 impl<'a> PreorderFlowTraversal for AssignISizesTraversal<'a> {
     #[inline]
     fn process(&mut self, flow: &mut Flow) -> bool {
-        flow.assign_inline_sizes(self.layout_context);
+        if ! unsafe { *self.layout_context.shared.double_reflow.get() } {
+            flow.assign_inline_sizes(self.layout_context);
+        }
         true
     }
 }
@@ -416,6 +418,7 @@ impl LayoutTask {
             opts: self.opts.clone(),
             dirty: Rect::zero(),
             generation: rw_data.generation,
+            double_reflow: UnsafeCell::new(false),
         }
     }
 
@@ -798,7 +801,9 @@ impl LayoutTask {
 
                     // Flush out double-reflow bugs. Reflow should be idempotent.
                     if !cfg!(ndebug) {
+                        unsafe { *shared_layout_ctx.double_reflow.get() = true };
                         self.solve_constraints_parallel(data, rw_data, &mut layout_root, &mut shared_layout_ctx);
+                        unsafe { *shared_layout_ctx.double_reflow.get() = false };
                     }
                 }
             }

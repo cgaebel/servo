@@ -17,6 +17,7 @@ use servo_net::local_image_cache::LocalImageCache;
 use servo_util::geometry::Au;
 use servo_util::opts::Opts;
 use sync::{Arc, Mutex};
+use std::cell::UnsafeCell;
 use std::mem;
 use style::Stylist;
 use url::Url;
@@ -84,6 +85,8 @@ pub struct SharedLayoutContext {
     /// Starts at zero, and increased by one every time a layout completes.
     /// This can be used to easily check for invalid stale data.
     pub generation: uint,
+
+    pub double_reflow: UnsafeCell<bool>,
 }
 
 pub struct LayoutContext<'a> {
