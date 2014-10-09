@@ -785,11 +785,21 @@ impl LayoutTask {
                 None => {
                     // Sequential mode.
                     let layout_ctx = LayoutContext::new(&shared_layout_ctx);
-                    self.solve_constraints(layout_root.get_mut(), &layout_ctx)
+                    self.solve_constraints(layout_root.get_mut(), &layout_ctx);
+
+                    // Flush out double-reflow bugs. Reflow should be idempotent.
+                    if !cfg!(ndebug) {
+                        self.solve_constraints(layout_root.get_mut(), &layout_ctx);
+                    }
                 }
                 Some(_) => {
                     // Parallel mode.
-                    self.solve_constraints_parallel(data, rw_data, &mut layout_root, &mut shared_layout_ctx)
+                    self.solve_constraints_parallel(data, rw_data, &mut layout_root, &mut shared_layout_ctx);
+
+                    // Flush out double-reflow bugs. Reflow should be idempotent.
+                    if !cfg!(ndebug) {
+                        self.solve_constraints_parallel(data, rw_data, &mut layout_root, &mut shared_layout_ctx);
+                    }
                 }
             }
         });
