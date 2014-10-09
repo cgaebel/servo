@@ -194,7 +194,7 @@ pub struct AssignISizesTraversal<'a> {
 impl<'a> PreorderFlowTraversal for AssignISizesTraversal<'a> {
     #[inline]
     fn process(&mut self, flow: &mut Flow) -> bool {
-        if !self.layout_context.double_reflow() {
+        if !self.layout_context.double_reflow() || true {
             flow.assign_inline_sizes(self.layout_context);
         }
         true
