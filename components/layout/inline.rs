@@ -1026,7 +1026,6 @@ impl Flow for InlineFlow {
     /// Recursively (top-down) determines the actual inline-size of child contexts and fragments. When called
     /// on this context, the context has had its inline-size set by the parent context.
     fn assign_inline_sizes(&mut self, layout_context: &LayoutContext) {
-        if layout_context.double_reflow() { return }
 
         let _scope = layout_debug_scope!("inline::assign_inline_sizes {:s}", self.base.debug_id());
 
