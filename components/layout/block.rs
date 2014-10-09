@@ -1575,6 +1575,8 @@ impl Flow for BlockFlow {
     /// Dual fragments consume some inline-size first, and the remainder is assigned to all child (block)
     /// contexts.
     fn assign_inline_sizes(&mut self, layout_context: &LayoutContext) {
+        if layout_context.double_reflow() { return }
+
         let _scope = layout_debug_scope!("block::assign_inline_sizes {:s}", self.base.debug_id());
 
         debug!("assign_inline_sizes({}): assigning inline_size for flow",
