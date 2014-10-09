@@ -194,7 +194,7 @@ pub struct AssignISizesTraversal<'a> {
 impl<'a> PreorderFlowTraversal for AssignISizesTraversal<'a> {
     #[inline]
     fn process(&mut self, flow: &mut Flow) -> bool {
-        if ! unsafe { *self.layout_context.shared.double_reflow.get() } {
+        if !self.layout_context.double_reflow() {
             flow.assign_inline_sizes(self.layout_context);
         }
         true
@@ -211,7 +211,7 @@ pub struct AssignBSizesAndStoreOverflowTraversal<'a> {
 impl<'a> PostorderFlowTraversal for AssignBSizesAndStoreOverflowTraversal<'a> {
     #[inline]
     fn process(&mut self, flow: &mut Flow) -> bool {
-        if ! unsafe { *self.layout_context.shared.double_reflow.get() } || true {
+        if !self.layout_context.double_reflow() {
             flow.assign_block_size(self.layout_context);
             // Skip store-overflow for absolutely positioned flows. That will be
             // done in a separate traversal.
@@ -219,6 +219,7 @@ impl<'a> PostorderFlowTraversal for AssignBSizesAndStoreOverflowTraversal<'a> {
                 flow.store_overflow(self.layout_context);
             }
         }
+
         true
     }
 

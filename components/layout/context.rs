@@ -105,6 +105,10 @@ impl<'a> LayoutContext<'a> {
         }
     }
 
+    pub fn double_reflow(&self) -> bool {
+        unsafe { *self.shared.double_reflow.get() }
+    }
+
     #[inline(always)]
     pub fn font_context<'a>(&'a self) -> &'a mut FontContext {
         unsafe {
