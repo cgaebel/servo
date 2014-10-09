@@ -211,11 +211,13 @@ pub struct AssignBSizesAndStoreOverflowTraversal<'a> {
 impl<'a> PostorderFlowTraversal for AssignBSizesAndStoreOverflowTraversal<'a> {
     #[inline]
     fn process(&mut self, flow: &mut Flow) -> bool {
-        flow.assign_block_size(self.layout_context);
-        // Skip store-overflow for absolutely positioned flows. That will be
-        // done in a separate traversal.
-        if !flow.is_store_overflow_delayed() {
-            flow.store_overflow(self.layout_context);
+        if ! unsafe { *self.layout_context.shared.double_reflow.get() } {
+            flow.assign_block_size(self.layout_context);
+            // Skip store-overflow for absolutely positioned flows. That will be
+            // done in a separate traversal.
+            if !flow.is_store_overflow_delayed() {
+                flow.store_overflow(self.layout_context);
+            }
         }
         true
     }
