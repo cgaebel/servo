@@ -204,7 +204,7 @@ impl<'a> PostorderDomTraversal for ConstructFlows<'a> {
             let tnode = ThreadSafeLayoutNode::new(&node);
 
             // Always re-construct if incremental layout is turned off.
-            if !self.layout_context.shared.opts.incremental_layout {
+            if self.layout_context.shared.opts.nonincremental_layout {
                 unsafe {
                     node.set_dirty_descendants(true);
                 }

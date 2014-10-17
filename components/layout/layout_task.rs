@@ -642,7 +642,7 @@ impl LayoutTask {
                 Some((&data.url, data.iframe, self.first_reflow.get())),
                 self.time_profiler_chan.clone(),
                 || {
-            if shared_layout_ctx.opts.incremental_layout {
+            if !shared_layout_ctx.opts.nonincremental_layout {
                 layout_root.nonincremental_reset();
             }
         });

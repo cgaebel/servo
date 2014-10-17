@@ -10,12 +10,6 @@
 //! intermediate data that goes with a DOM node and hasn't found its "home" yet-maybe it's a box,
 //! maybe it's an absolute or fixed position thing that hasn't found its containing block yet.
 //! Construction items bubble up the tree from children to parents until they find their homes.
-//!
-//! TODO(pcwalton): There is no incremental reflow yet. This scheme requires that nodes either have
-//! weak references to flows or that there be some mechanism to efficiently (O(1) time) "blow
-//! apart" a flow tree and have the flows migrate "home" to their respective DOM nodes while we
-//! perform flow tree construction. The precise mechanism for this will take some experimentation
-//! to get right.
 
 #![deny(unsafe_block)]
 
@@ -84,11 +78,11 @@ pub enum ConstructionResult {
 
 impl ConstructionResult {
     pub fn swap_out(&mut self, layout_context: &LayoutContext) -> ConstructionResult {
-        if layout_context.shared.opts.incremental_layout {
-            return (*self).clone();
+        if layout_context.shared.opts.nonincremental_layout {
+            return mem::replace(self, NoConstructionResult)
         }
 
-        mem::replace(self, NoConstructionResult)
+        (*self).clone()
     }
 
     pub fn debug_id(&self) -> uint {
