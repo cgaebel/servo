@@ -10,7 +10,7 @@ use construct::FlowConstructor;
 use context::LayoutContext;
 use flow::{Flow, MutableFlowUtils, PreorderFlowTraversal, PostorderFlowTraversal};
 use flow;
-use incremental::RestyleDamage;
+use incremental::{RestyleDamage, BubbleISizes, Reflow};
 use wrapper::{layout_node_to_unsafe_layout_node, LayoutNode};
 use wrapper::{PostorderNodeMutTraversal, ThreadSafeLayoutNode, UnsafeLayoutNode};
 use wrapper::{PreorderDomTraversal, PostorderDomTraversal};
@@ -282,6 +282,11 @@ impl<'a> PostorderFlowTraversal for BubbleISizes<'a> {
     fn process(&self, flow: &mut Flow) {
         flow.bubble_inline_sizes();
     }
+
+    #[inline]
+    fn should_process(&self, flow: &mut Flow) -> bool {
+        flow::base(flow).restyle_damage.contains(BubbleISizes)
+    }
 }
 
 /// The assign-inline-sizes traversal. In Gecko this corresponds to `Reflow`.
@@ -293,6 +298,11 @@ impl<'a> PreorderFlowTraversal for AssignISizes<'a> {
     #[inline]
     fn process(&self, flow: &mut Flow) {
         flow.assign_inline_sizes(self.layout_context);
+    }
+
+    #[inline]
+    fn should_process(&self, flow: &mut Flow) -> bool {
+        flow::base(flow).restyle_damage.contains(Reflow)
     }
 }
 
@@ -317,7 +327,8 @@ impl<'a> PostorderFlowTraversal for AssignBSizesAndStoreOverflow<'a> {
 
     #[inline]
     fn should_process(&self, flow: &mut Flow) -> bool {
-        !flow::base(flow).flags.impacted_by_floats()
+        let base = flow::base(flow);
+        base.restyle_damage.contains(Reflow) && !base.flags.impacted_by_floats()
     }
 }
 

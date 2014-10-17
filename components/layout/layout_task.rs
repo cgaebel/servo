@@ -638,15 +638,6 @@ impl LayoutTask {
             layout_root.propagate_restyle_damage();
         });
 
-        profile(time::LayoutNonIncrementalReset,
-                Some((&data.url, data.iframe, self.first_reflow.get())),
-                self.time_profiler_chan.clone(),
-                || {
-            if !shared_layout_ctx.opts.nonincremental_layout {
-                layout_root.nonincremental_reset();
-            }
-        });
-
         // Verification of the flow tree, which ensures that all nodes were either marked as leaves
         // or as non-leaves. This becomes a no-op in release builds. (It is inconsequential to
         // memory safety but is a useful debugging tool.)
