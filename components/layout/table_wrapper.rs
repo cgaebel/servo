@@ -40,6 +40,11 @@ pub enum TableLayout {
 pub struct TableWrapperFlow {
     pub block_flow: BlockFlow,
 
+    /// Inline-size information for each column, but only according to
+    /// `bubble_inline_sizes`. This allows us to start from scratch each reflow,
+    /// and be all incremental about it.
+    pub post_bubble_column_inline_sizes: Vec<ColumnInlineSize>,
+
     /// Inline-size information for each column.
     pub column_inline_sizes: Vec<ColumnInlineSize>,
 
@@ -60,6 +65,7 @@ impl TableWrapperFlow {
         };
         TableWrapperFlow {
             block_flow: block_flow,
+            post_bubble_column_inline_sizes: vec!(),
             column_inline_sizes: vec!(),
             table_layout: table_layout
         }
@@ -77,6 +83,7 @@ impl TableWrapperFlow {
         };
         TableWrapperFlow {
             block_flow: block_flow,
+            post_bubble_column_inline_sizes: vec!(),
             column_inline_sizes: vec!(),
             table_layout: table_layout
         }
@@ -95,6 +102,7 @@ impl TableWrapperFlow {
         };
         TableWrapperFlow {
             block_flow: block_flow,
+            post_bubble_column_inline_sizes: vec!(),
             column_inline_sizes: vec!(),
             table_layout: table_layout
         }
@@ -244,7 +252,7 @@ impl Flow for TableWrapperFlow {
         for kid in self.block_flow.base.child_iter() {
             debug_assert!(kid.is_table_caption() || kid.is_table());
             if kid.is_table() {
-                self.column_inline_sizes = kid.column_inline_sizes().clone()
+                self.post_bubble_column_inline_sizes = kid.column_inline_sizes().clone()
             }
         }
 
@@ -258,6 +266,8 @@ impl Flow for TableWrapperFlow {
                } else {
                    "table_wrapper"
                });
+
+        self.column_inline_sizes = self.post_bubble_column_inline_sizes.clone();
 
         // Table wrappers are essentially block formatting contexts and are therefore never
         // impacted by floats.
@@ -293,6 +303,7 @@ impl Flow for TableWrapperFlow {
         self.block_flow.propagate_assigned_inline_size_to_children(inline_start_content_edge,
                                                                    content_inline_size,
                                                                    assigned_column_inline_sizes);
+
     }
 
     fn assign_block_size<'a>(&mut self, ctx: &'a LayoutContext<'a>) {
@@ -564,4 +575,3 @@ impl ExcessInlineSizeDistributionInfo {
             amount_to_distribute
     }
 }
-

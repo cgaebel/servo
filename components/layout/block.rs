@@ -1847,6 +1847,7 @@ impl fmt::Show for BlockFlow {
 }
 
 /// The inputs for the inline-sizes-and-margins constraint equation.
+#[deriving(Show)]
 pub struct ISizeConstraintInput {
     pub computed_inline_size: MaybeAuto,
     pub inline_start_margin: MaybeAuto,

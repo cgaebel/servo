@@ -1236,6 +1236,7 @@ impl<'a> MutableFlowUtils for &'a mut Flow + 'a {
             base.collapsible_margins    = CollapsibleMargins::new();
             base.abs_position           = Zero::zero();
             base.block_container_explicit_block_size = None;
+            base.block_container_inline_size = Au(0);
             base.display_list           = DisplayList::new();
             base.layers                 = DList::new();
             base.absolute_position_info = AbsolutePositionInfo::new(writing_mode);
