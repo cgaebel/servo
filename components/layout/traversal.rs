@@ -328,10 +328,8 @@ impl<'a> PostorderFlowTraversal for AssignBSizesAndStoreOverflow<'a> {
             // Skip store-overflow for absolutely positioned flows. That will be
             // done in a separate traversal.
 
-            if flow::base(flow).restyle_damage.contains(Reflow) {
-                if !flow.is_store_overflow_delayed() {
-                    flow.store_overflow(self.layout_context);
-                }
+            if !flow.is_store_overflow_delayed() {
+                flow.store_overflow(self.layout_context);
             }
         }
 
@@ -341,7 +339,7 @@ impl<'a> PostorderFlowTraversal for AssignBSizesAndStoreOverflow<'a> {
     #[inline]
     fn should_process(&self, flow: &mut Flow) -> bool {
         // TODO(cgaebel): Incremental block size assignment.
-        flow::base(flow).restyle_damage.contains(Reflow) || true
+        flow::base(flow).restyle_damage.contains(Reflow)
     }
 }
 
