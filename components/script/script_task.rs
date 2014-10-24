@@ -388,6 +388,8 @@ impl ScriptTask {
         while self.handle_msgs() {
             // Go on...
         }
+
+        debug!("script: He's dead, Jim.");
     }
 
     /// Handle incoming control messages.

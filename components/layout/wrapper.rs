@@ -220,7 +220,7 @@ impl<'ln> LayoutNode<'ln> {
         }
 
         s.push_str(self.debug_str().as_slice());
-        println!("{:s}", s);
+        error!("{:s}", s);
 
         // FIXME: this should have a pure version?
         for kid in self.children() {
