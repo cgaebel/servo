@@ -60,6 +60,7 @@ pub trait SmallVecPrivate<T> {
 pub trait SmallVec<T> : SmallVecPrivate<T> where T: 'static {
     fn inline_size(&self) -> uint;
     fn len(&self) -> uint;
+    fn is_empty(&self) -> bool;
     fn cap(&self) -> uint;
 
     fn spilled(&self) -> bool {
@@ -382,6 +383,9 @@ macro_rules! def_small_vector(
             }
             fn len(&self) -> uint {
                 self.len
+            }
+            fn is_empty(&self) -> bool {
+                self.len == 0
             }
             fn cap(&self) -> uint {
                 self.cap

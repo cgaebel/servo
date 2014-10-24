@@ -653,9 +653,13 @@ impl ScriptTask {
 
         self.compositor.set_ready_state(pipeline_id, FinishedLoading);
 
-        if page.pending_reflows.get() > 0 {
-            page.pending_reflows.set(0);
-            self.force_reflow(&*page);
+        // This won't actually flush layout unless there are pending dirty nodes.
+        let has_pending_dirty_nodes = !page.pending_dirty_nodes.borrow().is_empty();
+        if has_pending_dirty_nodes {
+            debug!("Reflow finished. Flushing again.");
+            page.flush_layout(ReflowForDisplay);
+        } else {
+            debug!("Reflow finished, but no pending dirty nodes.");
         }
     }
 
@@ -734,7 +738,7 @@ impl ScriptTask {
             Some((ref loaded, needs_reflow)) if *loaded == url => {
                 *page.mut_url() = Some((loaded.clone(), false));
                 if needs_reflow {
-                    self.force_reflow(&*page);
+                    page.flush_layout(ReflowForDisplay);
                 }
                 return;
             },
@@ -845,7 +849,7 @@ impl ScriptTask {
                 //       drop an exception on the floor.
                 match cx.evaluate_script(global_obj, file.data.clone(), filename, 1) {
                     Ok(_) => (),
-                    Err(_) => println!("evaluate_script failed")
+                    Err(_) => error!("evaluate_script failed")
                 }
 
                 window.flush_layout(ReflowForDisplay);
@@ -887,21 +891,6 @@ impl ScriptTask {
         self.compositor.scroll_fragment_point(pipeline_id, LayerId::null(), point);
     }
 
-    fn force_reflow(&self, page: &Page) {
-        {
-            let mut pending = page.pending_dirty_nodes.borrow_mut();
-            let js_runtime = self.js_runtime.deref().ptr;
-
-            for untrusted_node in pending.into_iter() {
-                let node = node::from_untrusted_node_address(js_runtime, untrusted_node).root();
-                node.dirty();
-            }
-        }
-
-        page.damage();
-        page.reflow(ReflowForDisplay, self.control_chan.clone(), &*self.compositor);
-    }
-
     /// This is the main entry point for receiving and dispatching DOM events.
     ///
     /// TODO: Actually perform DOM event dispatch.
@@ -916,7 +905,7 @@ impl ScriptTask {
 
                     let frame = page.frame();
                     if frame.is_some() {
-                        self.force_reflow(&*page);
+                        page.flush_layout(ReflowForDisplay);
                     }
 
                     let fragment_node =
@@ -950,19 +939,12 @@ impl ScriptTask {
                 }
             }
 
-            // FIXME(pcwalton): This reflows the entire document and is not incremental-y.
             ReflowEvent(to_dirty) => {
                 debug!("script got reflow event");
                 assert_eq!(to_dirty.len(), 0);
                 let page = get_page(&*self.page.borrow(), pipeline_id);
-                let frame = page.frame();
-                if frame.is_some() {
-                    let in_layout = page.layout_join_port.borrow().is_some();
-                    if in_layout {
-                        page.pending_reflows.set(page.pending_reflows.get() + 1);
-                    } else {
-                        self.force_reflow(&*page);
-                    }
+                if page.frame().is_some() {
+                    page.poke_layout(ReflowForDisplay);
                 }
             }
 
@@ -1066,7 +1048,7 @@ impl ScriptTask {
 
                         if target_compare {
                             if mouse_over_targets.is_some() {
-                                self.force_reflow(&*page);
+                                page.poke_layout(ReflowForDisplay);
                             }
                             *mouse_over_targets = Some(target_list);
                         }

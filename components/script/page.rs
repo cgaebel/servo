@@ -9,6 +9,7 @@ use dom::bindings::js::{JS, JSRef, Temporary, OptionalRootable};
 use dom::bindings::utils::GlobalStaticData;
 use dom::document::{Document, DocumentHelpers};
 use dom::element::Element;
+use dom::node;
 use dom::node::{Node, NodeHelpers};
 use dom::window::Window;
 use layout_interface::{ReflowForDisplay};
@@ -87,9 +88,6 @@ pub struct Page {
     // Child Pages.
     pub children: DOMRefCell<Vec<Rc<Page>>>,
 
-    /// Whether layout needs to be run at all.
-    pub damaged: Cell<bool>,
-
     /// Number of pending reflows that were sent while layout was active.
     pub pending_reflows: Cell<int>,
 
@@ -158,20 +156,65 @@ impl Page {
             resource_task: resource_task,
             constellation_chan: constellation_chan,
             children: DOMRefCell::new(vec!()),
-            damaged: Cell::new(false),
             pending_reflows: Cell::new(0),
             avoided_reflows: Cell::new(0),
         }
     }
 
-    pub fn flush_layout(&self, goal: ReflowGoal) {
-        if self.damaged.get() {
-            let frame = self.frame();
-            let window = frame.as_ref().unwrap().window.root();
-            self.reflow(goal, window.control_chan().clone(), window.compositor());
+    /// Queue some nodes to be marked dirty when the current reflow finishes.
+    /// If there's no reflow currently running, the nodes will be immediately
+    /// dirtied and reflow will be triggered. This is probably the function you
+    /// want to use.
+    pub fn queue_dirty_nodes(&self, to_dirty: &[JSRef<Node>]) {
+        {
+            let mut pending = self.pending_dirty_nodes.borrow_mut();
+
+            for node in to_dirty.iter() {
+                pending.push(node.to_untrusted_node_address());
+            }
+        }
+
+        // FIXME This should probably be ReflowForQuery, not Display. All queries currently
+        // currently rely on the display list, which means we can't destroy it by
+        // doing a query reflow.
+        self.poke_layout(ReflowForDisplay);
+    }
+
+    /// Try and reflow if not already reflowing. Otherwise, just reflow after this
+    /// one is done.
+    pub fn poke_layout(&self, goal: ReflowGoal) {
+        debug!("Poking layout.");
+        let layout_already_running = self.layout_join_port.borrow().is_some();
+        let has_dirty_nodes = !self.pending_dirty_nodes.borrow().is_empty();
+
+        if !layout_already_running && has_dirty_nodes {
+            self.flush_layout(goal);
         } else {
+            if layout_already_running {
+                debug!("Layout already running.");
+            }
+            if !has_dirty_nodes {
+                debug!("No dirty nodes.");
+            }
+
             self.avoided_reflows.set(self.avoided_reflows.get() + 1);
         }
+    }
+
+    /// Runs layout. If layout is currently running, wait until it's done, then
+    /// run it again.
+    pub fn flush_layout(&self, goal: ReflowGoal) {
+        debug!("Flushing layout.");
+        let frame = self.frame();
+        let window =
+            match frame.as_ref() {
+                Some(ref frame) => frame.window.root(),
+                None => {
+                    debug!("No frame.");
+                    return;
+                }
+            };
+        self.reflow(goal, window.control_chan().clone(), window.compositor());
     }
 
     pub fn layout(&self) -> &LayoutRPC {
@@ -263,7 +306,7 @@ impl Page {
         self.url().as_ref().unwrap().ref0().clone()
     }
 
-    // FIXME(cgaebel): join_layout is racey. What if the compositor triggers a
+    // FIXME(cgaebel): join_layout is racy. What if the compositor triggers a
     // reflow between the "join complete" message and returning from this
     // function?
 
@@ -293,6 +336,19 @@ impl Page {
         }
     }
 
+    /// Runs `node.dirty` on every pending node. This is only safe to do if
+    /// layout isn't currently running.
+    fn flush_pending_dirty_nodes(&self) {
+        let mut pending = self.pending_dirty_nodes.borrow_mut();
+        let js_info     = self.js_info();
+        let js_runtime  = js_info.as_ref().unwrap().js_context.deref().rt.deref().ptr;
+
+        for untrusted_node in pending.into_iter() {
+            let node = node::from_untrusted_node_address(js_runtime, untrusted_node).root();
+            node.dirty();
+        }
+    }
+
     /// Reflows the page if it's possible to do so. This method will wait until the layout task has
     /// completed its current action, join the layout task, and then request a new layout run. It
     /// won't wait for the new layout computation to finish.
@@ -300,7 +356,7 @@ impl Page {
     /// If there is no window size yet, the page is presumed invisible and no reflow is performed.
     ///
     /// This function fails if there is no root frame.
-    pub fn reflow(&self,
+    fn reflow(&self,
                   goal: ReflowGoal,
                   script_chan: ScriptControlChan,
                   compositor: &ScriptListener) {
@@ -323,6 +379,9 @@ impl Page {
                 // Now, join the layout so that they will see the latest changes we have made.
                 self.join_layout();
 
+                // Any pending dirty nodes now need to be flushed.
+                self.flush_pending_dirty_nodes();
+
                 // Tell the user that we're performing layout.
                 compositor.set_ready_state(self.id, PerformingLayout);
 
@@ -337,7 +396,6 @@ impl Page {
                 let root: JSRef<Node> = NodeCast::from_ref(*root);
 
                 let window_size = self.window_size.get();
-                self.damaged.set(false);
 
                 // Send new document and relevant styles to layout.
                 let reflow = box Reflow {
@@ -357,10 +415,6 @@ impl Page {
                 debug!("script: layout forked")
             }
         }
-    }
-
-    pub fn damage(&self) {
-        self.damaged.set(true);
     }
 
     /// Attempt to find a named element in this page's document.
