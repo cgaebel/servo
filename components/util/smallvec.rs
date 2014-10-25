@@ -327,13 +327,11 @@ impl<'a, T: 'static> Drop for SmallVecMoveIterator<'a,T> {
             None => {}
             Some(allocation) => {
                 unsafe {
-                    if intrinsics::owns_managed::<T>() {
-                        local_heap::local_free(allocation as *mut u8)
-                    } else {
-                        heap::deallocate(allocation as *mut u8,
-                                         mem::size_of::<T>() * self.cap,
-                                         mem::min_align_of::<T>())
-                    }
+                    assert!(allocation != 0u as *const _);
+                    heap::deallocate(allocation as *mut u8,
+                                     mem::size_of::<T>() * self.cap(),
+                                     mem::min_align_of::<T>())
+
                 }
             }
         }
