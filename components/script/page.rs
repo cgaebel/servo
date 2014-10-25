@@ -343,10 +343,12 @@ impl Page {
         let js_info     = self.js_info();
         let js_runtime  = js_info.as_ref().unwrap().js_context.deref().rt.deref().ptr;
 
-        for untrusted_node in pending.into_iter() {
+        for &untrusted_node in pending.iter() {
             let node = node::from_untrusted_node_address(js_runtime, untrusted_node).root();
             node.dirty();
         }
+
+        pending.clear();
     }
 
     /// Reflows the page if it's possible to do so. This method will wait until the layout task has
