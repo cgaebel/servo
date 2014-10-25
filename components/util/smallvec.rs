@@ -329,7 +329,7 @@ impl<'a, T: 'static> Drop for SmallVecMoveIterator<'a,T> {
                 unsafe {
                     assert!(allocation != 0u as *mut u8);
                     heap::deallocate(allocation,
-                                     mem::size_of::<T>() * self.cap(),
+                                     mem::size_of::<T>() * self.cap,
                                      mem::min_align_of::<T>())
 
                 }
