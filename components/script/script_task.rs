@@ -52,7 +52,6 @@ use servo_msg::constellation_msg;
 use servo_net::image_cache_task::ImageCacheTask;
 use servo_net::resource_task::ResourceTask;
 use servo_util::geometry::to_frac_px;
-use servo_util::smallvec::{SmallVec1, SmallVec};
 use servo_util::task::spawn_named_with_send_on_failure;
 
 use geom::point::Point2D;
@@ -475,7 +474,7 @@ impl ScriptTask {
                     let mut page = self.page.borrow_mut();
                     let inner_page = page.find(id).expect("Reflow sent to nonexistent pipeline");
                     let mut pending = inner_page.pending_dirty_nodes.borrow_mut();
-                    pending.push_all_move(node_addresses);
+                    pending.extend(node_addresses.into_iter());
                     needs_reflow.insert(id);
                 }
                 _ => {
@@ -529,7 +528,7 @@ impl ScriptTask {
 
         // Now process any pending reflows.
         for id in needs_reflow.into_iter() {
-            self.handle_event(id, ReflowEvent(SmallVec1::new()));
+            self.handle_event(id, ReflowEvent(Vec::new()));
         }
 
         true

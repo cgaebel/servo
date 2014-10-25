@@ -28,7 +28,6 @@ use servo_msg::constellation_msg::{LoadData, SubpageId};
 use servo_msg::compositor_msg::ScriptListener;
 use servo_net::image_cache_task::ImageCacheTask;
 use servo_net::resource_task::ResourceTask;
-use servo_util::smallvec::SmallVec1;
 use std::any::Any;
 
 use geom::point::Point2D;
@@ -67,7 +66,7 @@ pub enum ConstellationControlMsg {
 /// Events from the compositor that the script task needs to know about
 pub enum CompositorEvent {
     ResizeEvent(WindowSizeData),
-    ReflowEvent(SmallVec1<UntrustedNodeAddress>),
+    ReflowEvent(Vec<UntrustedNodeAddress>),
     ClickEvent(uint, Point2D<f32>),
     MouseDownEvent(uint, Point2D<f32>),
     MouseUpEvent(uint, Point2D<f32>),

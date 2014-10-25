@@ -26,7 +26,6 @@ use servo_msg::constellation_msg::{ConstellationChan, WindowSizeData};
 use servo_msg::constellation_msg::{PipelineId, SubpageId};
 use servo_net::resource_task::ResourceTask;
 use servo_util::str::DOMString;
-use servo_util::smallvec::{SmallVec1, SmallVec};
 use std::cell::Cell;
 use std::comm::{channel, Receiver, Empty, Disconnected};
 use std::mem::replace;
@@ -74,7 +73,7 @@ pub struct Page {
     pub resize_event: Cell<Option<WindowSizeData>>,
 
     /// Any nodes that need to be dirtied before the next reflow.
-    pub pending_dirty_nodes: DOMRefCell<SmallVec1<UntrustedNodeAddress>>,
+    pub pending_dirty_nodes: DOMRefCell<Vec<UntrustedNodeAddress>>,
 
     /// Pending scroll to fragment event, if any
     pub fragment_name: DOMRefCell<Option<String>>,
@@ -150,7 +149,7 @@ impl Page {
             url: DOMRefCell::new(None),
             next_subpage_id: Cell::new(SubpageId(0)),
             resize_event: Cell::new(None),
-            pending_dirty_nodes: DOMRefCell::new(SmallVec1::new()),
+            pending_dirty_nodes: DOMRefCell::new(Vec::new()),
             fragment_name: DOMRefCell::new(None),
             last_reflow_id: Cell::new(0),
             resource_task: resource_task,
