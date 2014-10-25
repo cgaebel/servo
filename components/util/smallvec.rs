@@ -530,5 +530,22 @@ pub mod tests {
             "hello".to_string(), "there".to_string(), "burma".to_string(), "shave".to_string(), "hello".to_string(), "there".to_string(), "burma".to_string(), "shave".to_string(),
         ].as_slice());
     }
-}
 
+    #[test]
+    pub fn test_into_iter() {
+        let mut v = SmallVec1::new();
+        v.push(1u32);
+        drop(v.into_iter());
+        assert_eq!(v.len(), 0);
+        v.push(1);
+        v.push(2);
+        v.push(3);
+        assert_eq!(v.len(), 3);
+        drop(v.into_iter());
+        assert_eq!(v.len(), 0);
+        v.push(1);
+        assert_eq!(v.len(), 1);
+        drop(v.into_iter());
+        assert_eq!(v.len(), 0);
+    }
+}
