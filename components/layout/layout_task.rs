@@ -158,7 +158,7 @@ impl ImageResponder<UntrustedNodeAddress> for LayoutImageResponder {
             proc(_, node_address) {
                 let ScriptControlChan(chan) = script_chan;
                 debug!("Dirtying {:x}", node_address as uint);
-                let mut nodes = SmallVec1::new();
+                let mut nodes = Vec::new();
                 nodes.vec_push(node_address);
                 drop(chan.send_opt(SendEventMsg(id.clone(), ReflowEvent(nodes))))
             };
