@@ -448,7 +448,7 @@ macro_rules! def_small_vector_drop_impl(
                         *ptr.offset(i as int) = mem::uninitialized();
                     }
 
-                    assert!(self.ptr() != 0u as *mut u8);
+                    assert!(self.ptr() != 0u as *const _);
                     heap::deallocate(self.mut_ptr() as *mut u8,
                                      mem::size_of::<T>() * self.cap(),
                                      mem::min_align_of::<T>())
