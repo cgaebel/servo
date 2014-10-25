@@ -451,6 +451,7 @@ macro_rules! def_small_vector_drop_impl(
                     if intrinsics::owns_managed::<T>() {
                         local_heap::local_free(self.ptr() as *mut u8)
                     } else {
+                        assert!(self.ptr() != 0u as *mut u8);
                         heap::deallocate(self.mut_ptr() as *mut u8,
                                          mem::size_of::<T>() * self.cap(),
                                          mem::min_align_of::<T>())
