@@ -1,3 +1,5 @@
+== incremental-reflow.html incremental-reflow-ref.html
+== rng.html rng-ref.html
 == case-insensitive-font-family.html case-insensitive-font-family-ref.html
 != img_simple.html img_simple_ref.html
 == basic_width_px.html basic_width_em.html

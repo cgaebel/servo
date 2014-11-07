@@ -1,6 +1,13 @@
-<html>
+<html lang="en">
+<head>
+<style>
+</style>
+<meta charset="UTF-8">
+</head>
 <body>
 <script>
+  var ref = false;
+  var seed = 0;
 
 // From: https://github.com/davidbau/seedrandom#ecfda93d5e6694726ee9d2acfe9df6cd20381cbd
 
@@ -182,13 +189,114 @@ Math, // math: package containing random, pow, and seedrandom
 'random'// rngname: name for Math.random and Math.seedrandom
 );
 
-var body = document.getElementsByTagName("body")[0];
+  Math.seedrandom(seed);
 
-Math.seedrandom(1000);
-body.appendChild(document.createTextNode("" + Math.random() + "\n"));
-body.appendChild(document.createTextNode("" + Math.random() + "\n"));
-body.appendChild(document.createTextNode("" + Math.random() + "\n"));
-body.appendChild(document.createTextNode("" + Math.random() + "\n"));
+  var the_body = document.getElementsByTagName("body")[0];
+
+  for (i = 0; i < 10; i++) {
+    var the_div = document.createElement("div");
+    the_div.setAttribute("id", "_" + i);
+
+    for (j = 0; j < 10; j++) {
+      var the_span = document.createElement("span");
+      the_span.setAttribute("id", "_" + i + "" + j);
+      var content = document.createTextNode(i + "" + j);
+      the_span.appendChild(content);
+      the_div.appendChild(the_span);
+    }
+
+    the_body.appendChild(the_div);
+  }
+
+  function randomRange(low_inclusive, high_exclusive) {
+    return Math.floor(Math.random() * (high_exclusive - low_inclusive)) + low_inclusive;
+  }
+
+  function generateRandomBGColor() {
+    return "background-color: rgb(" + randomRange(0, 256) + ", " + randomRange(0, 256) + ", " + randomRange(0, 256) + ");";
+  }
+
+  function generateRandomStyle(i, j) {
+    var ret = "#_" + i + "" + j + " { ";
+    /*
+    ret = generateRandomDisplay() + "\n";
+    ret += generateRandomPosition() + "\n";
+    ret += generateRandomFloat() + "\n";
+    ret += generateRandomBGColor() + "\n";
+    ret += generateRandomNthChild() + "\n";
+    */
+    ret += generateRandomBGColor() + "\n";
+
+    return ret + " }";
+  }
+
+  // Now we have 10 divs (_0, _1, ..., _9) and 100 spans inside them (_00, _01, ..., _99).
+
+  var target_stylesheet;
+  for (i = 0; i < document.styleSheets.length; i++) {
+    if (document.styleSheets[i].href === null) {
+      target_stylesheet = document.styleSheets[i];
+      break;
+    }
+  }
+
+  if (ref) {
+    for (i = 0; i < 10; i++) {
+      for (j = 0; j < 10; j++) {
+        generateRandomStyle(i, j); // throw it away.
+      }
+    }
+
+    for (i = 0; i < 10; i++) {
+      for (j = 0; j < 10; j++) {
+        var new_rule = generateRandomStyle(i, j);
+        target_stylesheet.insertRule(new_rule, target_stylesheet.cssRules.length);
+      }
+    }
+  } else {
+    for (i = 0; i < 10; i++) {
+      for (j = 0; j < 10; j++) {
+        var new_rule = generateRandomStyle(i, j);
+        target_stylesheet.insertRule(new_rule, target_stylesheet.cssRules.length);
+        document.getElementById("_0").getBoundingClientRect(); // force reflow
+      }
+    }
+
+    for (i = 0; i < 10; i++) {
+      for (j = 0; j < 10; j++) {
+        var new_rule = generateRandomStyle(i, j);
+        target_stylesheet.deleteRule(i*10+j);
+        target_stylesheet.insertRule(new_rule, i*10+j);
+        target_stylesheet.cssRules[i*10+j].cssText = new_rule;
+        document.getElementById("_0").getBoundingClientRect(); // force reflow
+      }
+    }
+  }
+
+  // Clear rules:
+  // while (target_stylesheet.cssRules.length != 0) {
+  //   target_stylesheet.deleteRule(0);
+  // }
+
+  //
+  // If not the reference version:
+  //
+  //   Assign each of these 110 elements a random style, force layout, then
+  //   assign a different style.
+  //
+  // If the reference version:
+  //
+  //   Assign the final styles, then force layout.
+  //
+  // Things to fuzz:
+  //
+  //   display, position, float, background-color,
+  //   (width, height depending on position)
+  //   nth child, nth last child,
+  //   sibling combinators (+, ~) adding and removal,
+  //   adding and removing nodes,
+  //   adding/removing pseudo elements,
+  //   changing the display of pseudo elements
 </script>
 </body>
 </html>

@@ -1,0 +1,429 @@
+<html lang="en">
+<head>
+<link rel="stylesheet" type="text/css" href="css/ahem.css">
+<style>
+</style>
+<meta charset="UTF-8">
+</head>
+<body>
+<script>
+  var ref = false;
+  var seed = 0;
+
+// From: https://github.com/davidbau/seedrandom#ecfda93d5e6694726ee9d2acfe9df6cd20381cbd
+
+(function (
+global, pool, math, width, chunks, digits, module, define, rngname) {
+//
+// The following constants are related to IEEE 754 limits.
+//
+var startdenom = math.pow(width, chunks),
+significance = math.pow(2, digits),
+overflow = significance * 2,
+mask = width - 1,
+nodecrypto;
+//
+// seedrandom()
+// This is the seedrandom function described above.
+//
+var impl = math['seed' + rngname] = function(seed, options, callback) {
+var key = [];
+options = (options == true) ? { entropy: true } : (options || {});
+// Flatten the seed string or build one from local entropy if needed.
+var shortseed = mixkey(flatten(
+options.entropy ? [seed, tostring(pool)] :
+(seed == null) ? autoseed() : seed, 3), key);
+// Use the seed to initialize an ARC4 generator.
+var arc4 = new ARC4(key);
+// Mix the randomness into accumulated entropy.
+mixkey(tostring(arc4.S), pool);
+// Calling convention: what to return as a function of prng, seed, is_math.
+return (options.pass || callback ||
+// If called as a method of Math (Math.seedrandom()), mutate Math.random
+// because that is how seedrandom.js has worked since v1.0. Otherwise,
+// it is a newer calling convention, so return the prng directly.
+function(prng, seed, is_math_call) {
+if (is_math_call) { math[rngname] = prng; return seed; }
+else return prng;
+})(
+// This function returns a random double in [0, 1) that contains
+// randomness in every bit of the mantissa of the IEEE 754 value.
+function() {
+var n = arc4.g(chunks), // Start with a numerator n < 2 ^ 48
+d = startdenom, // and denominator d = 2 ^ 48.
+x = 0; // and no 'extra last byte'.
+while (n < significance) { // Fill up all significant digits by
+n = (n + x) * width; // shifting numerator and
+d *= width; // denominator and generating a
+x = arc4.g(1); // new least-significant-byte.
+}
+while (n >= overflow) { // To avoid rounding up, before adding
+n /= 2; // last byte, shift everything
+d /= 2; // right using integer math until
+x >>>= 1; // we have exactly the desired bits.
+}
+return (n + x) / d; // Form the number within [0, 1).
+}, shortseed, 'global' in options ? options.global : (this == math));
+};
+//
+// ARC4
+//
+// An ARC4 implementation. The constructor takes a key in the form of
+// an array of at most (width) integers that should be 0 <= x < (width).
+//
+// The g(count) method returns a pseudorandom integer that concatenates
+// the next (count) outputs from ARC4. Its return value is a number x
+// that is in the range 0 <= x < (width ^ count).
+//
+/** @constructor */
+function ARC4(key) {
+var t, keylen = key.length,
+me = this, i = 0, j = me.i = me.j = 0, s = me.S = [];
+// The empty key [] is treated as [0].
+if (!keylen) { key = [keylen++]; }
+// Set up S using the standard key scheduling algorithm.
+while (i < width) {
+s[i] = i++;
+}
+for (i = 0; i < width; i++) {
+s[i] = s[j = mask & (j + key[i % keylen] + (t = s[i]))];
+s[j] = t;
+}
+// The "g" method returns the next (count) outputs as one number.
+(me.g = function(count) {
+// Using instance members instead of closure state nearly doubles speed.
+var t, r = 0,
+i = me.i, j = me.j, s = me.S;
+while (count--) {
+t = s[i = mask & (i + 1)];
+r = r * width + s[mask & ((s[i] = s[j = mask & (j + t)]) + (s[j] = t))];
+}
+me.i = i; me.j = j;
+return r;
+// For robust unpredictability, the function call below automatically
+// discards an initial batch of values. This is called RC4-drop[256].
+// See http://google.com/search?q=rsa+fluhrer+response&btnI
+})(width);
+}
+//
+// flatten()
+// Converts an object tree to nested arrays of strings.
+//
+function flatten(obj, depth) {
+var result = [], typ = (typeof obj), prop;
+if (depth && typ == 'object') {
+for (prop in obj) {
+try { result.push(flatten(obj[prop], depth - 1)); } catch (e) {}
+}
+}
+return (result.length ? result : typ == 'string' ? obj : obj + '\0');
+}
+//
+// mixkey()
+// Mixes a string seed into a key that is an array of integers, and
+// returns a shortened string seed that is equivalent to the result key.
+//
+function mixkey(seed, key) {
+var stringseed = seed + '', smear, j = 0;
+while (j < stringseed.length) {
+key[mask & j] =
+mask & ((smear ^= key[mask & j] * 19) + stringseed.charCodeAt(j++));
+}
+return tostring(key);
+}
+//
+// autoseed()
+// Returns an object for autoseeding, using window.crypto if available.
+//
+/** @param {Uint8Array|Navigator=} seed */
+function autoseed(seed) {
+try {
+if (nodecrypto) return tostring(nodecrypto.randomBytes(width));
+global.crypto.getRandomValues(seed = new Uint8Array(width));
+return tostring(seed);
+} catch (e) {
+return [+new Date, global, (seed = global.navigator) && seed.plugins,
+global.screen, tostring(pool)];
+}
+}
+//
+// tostring()
+// Converts an array of charcodes to a string
+//
+function tostring(a) {
+return String.fromCharCode.apply(0, a);
+}
+//
+// When seedrandom.js is loaded, we immediately mix a few bits
+// from the built-in RNG into the entropy pool. Because we do
+// not want to interfere with deterministic PRNG state later,
+// seedrandom will not call math.random on its own again after
+// initialization.
+//
+mixkey(math[rngname](), pool);
+//
+// Nodejs and AMD support: export the implementation as a module using
+// either convention.
+//
+if (module && module.exports) {
+module.exports = impl;
+try {
+// When in node.js, try using crypto package for autoseeding.
+nodecrypto = require('crypto');
+} catch (ex) {}
+} else if (define && define.amd) {
+define(function() { return impl; });
+}
+//
+// Node.js native crypto support.
+//
+// End anonymous scope, and pass initial values.
+})(
+this, // global window object
+[], // pool: entropy pool starts empty
+Math, // math: package containing random, pow, and seedrandom
+256, // width: each RC4 output is 0 <= x < 256
+6, // chunks: at least six RC4 outputs for each double
+52, // digits: there are 52 significant digits in a double
+(typeof module) == 'object' && module, // present in node.js
+(typeof define) == 'function' && define, // present with an AMD loader
+'random'// rngname: name for Math.random and Math.seedrandom
+);
+
+  Math.seedrandom(seed);
+
+  var the_body = document.getElementsByTagName("body")[0];
+
+  for (i = 0; i < 10; i++) {
+    var the_div = document.createElement("div");
+    the_div.setAttribute("id", "_" + i);
+
+    for (j = 0; j < 10; j++) {
+      var the_span = document.createElement("span");
+      the_span.setAttribute("id", "_" + i + "" + j);
+      var content = document.createTextNode(i + "" + j);
+      the_span.appendChild(content);
+      the_div.appendChild(the_span);
+    }
+
+    the_body.appendChild(the_div);
+  }
+
+  function randomRange(low_inclusive, high_exclusive) {
+    return Math.floor(Math.random() * (high_exclusive - low_inclusive)) + low_inclusive;
+  }
+
+  function generateRandomBGColor() {
+    return "background-color: rgba(" + randomRange(0, 256) + ", " + randomRange(0, 256) + ", " + randomRange(0, 256) + ", " + Math.random() + ");";
+  }
+
+  function generateRandomDisplay() {
+    var opts = [ "none", "inline", "block", "inline-block" ];
+    return "display: " + opts[randomRange(0, opts.length)] + ";";
+  }
+
+  function generateRandomFloat() {
+    var opts = [ "none", "none", "none", "none", "none", "none", "left", "right" ];
+    return "float: " + opts[randomRange(0, opts.length)] + ";";
+  }
+
+  function generateRandomFont() {
+    var opts = [ "Arial", "Helvetica" ];
+    return "font-family: " + opts[randomRange(0, opts.length)] + ";";
+  }
+
+  function generateRandomFontStyle() {
+    var opts = [ "normal", "normal", "italic", "oblique" ];
+    return "font-style: " + opts[randomRange(0, opts.length)] + ";";
+  }
+
+  function generateRandomFontSize() {
+    var opts = [ "20px", "25px", "30px", "35px" ];
+    return "font-size: " + opts[randomRange(0, opts.length)] + ";";
+  }
+
+  function generateStaticPosition() {
+    return "position: static;";
+  }
+
+  function generateRelativePosition() {
+    var ret = "position: relative;\n";
+
+    ret += "top: "    + randomRange(0, 10) + ";\n";
+    ret += "bottom: " + randomRange(0, 10) + ";\n";
+    ret += "left: "   + randomRange(0, 10) + ";\n";
+    ret += "right: "  + randomRange(0, 10) + ";\n";
+
+    return ret;
+  }
+
+  function generateAbsolutePosition() {
+    var ret = "position: absolute;\n";
+
+    ret += "top: "     + randomRange(0, 100) + ";\n";
+    ret += "bottom: "  + randomRange(0, 100) + ";\n";
+    ret += "left: "    + randomRange(0, 100) + ";\n";
+    ret += "right: "   + randomRange(0, 100) + ";\n";
+    ret += "width: "   + randomRange(10, 30) + ";\n";
+    ret += "height: "  + randomRange(10, 30) + ";\n";
+
+    return ret;
+  }
+
+  function generateFixedPosition() {
+    var ret = "position: fixed;\n";
+
+    ret += "top: "    + randomRange(0, 300) + ";\n";
+    ret += "bottom: " + randomRange(0, 300) + ";\n";
+    ret += "left: "   + randomRange(0, 300) + ";\n";
+    ret += "right: "  + randomRange(0, 300) + ";\n";
+    ret += "width: "  + randomRange(10, 30) + ";\n";
+    ret += "height: " + randomRange(10, 30) + ";\n";
+
+    return ret;
+  }
+
+  function generateRandomPosition() {
+    var _default = generateStaticPosition();
+    var opts = [ generateRelativePosition(), generateAbsolutePosition(), generateFixedPosition() ];
+    for (k = 0; k < 47; k++) {
+      opts.push(_default);
+    }
+    return opts[randomRange(0, opts.length)];
+  }
+
+  function generateRandomBorderWidth() {
+    var ret = "border-top-width: " + randomRange(0, 5) + "px;\n";
+    ret += "border-bottom-width: " + randomRange(0, 5) + "px;\n";
+    ret += "border-left-width: "   + randomRange(0, 5) + "px;\n";
+    ret += "border-right-width: "  + randomRange(0, 5) + "px;\n";
+    return ret;
+  }
+
+  function generateRandomBorderColor() {
+    var opts = [ "red", "green", "blue", "pink", "gold" ];
+
+    var ret = "border-top-color: " + opts[randomRange(0, opts.length)] + ";\n";
+    ret += "border-bottom-color: " + opts[randomRange(0, opts.length)] + ";\n";
+    ret += "border-left-color: "   + opts[randomRange(0, opts.length)] + ";\n";
+    ret += "border-right-color: "  + opts[randomRange(0, opts.length)] + ";\n";
+
+    return ret;
+  }
+
+  function generateRandomStyle(i, j) {
+    var ret;
+    if (j === null) {
+      ret = "#_" + i + " {";
+    } else {
+      ret = "#_" + i + "" + j + " {";
+    }
+
+    ret += generateRandomPosition()    + "\n";
+    ret += generateRandomDisplay()     + "\n";
+    ret += generateRandomFloat()       + "\n";
+    ret += generateRandomFont()        + "\n";
+    ret += generateRandomFontStyle()   + "\n";
+    ret += generateRandomFontSize()    + "\n";
+    ret += generateRandomBGColor()     + "\n";
+    ret += generateRandomBorderWidth() + "\n";
+    ret += generateRandomBorderColor() + "\n";
+
+    return ret + " }";
+  }
+
+  // Now we have 10 divs (_0, _1, ..., _9) and 100 spans inside them (_00, _01, ..., _99).
+
+  var target_stylesheet;
+  for (i = 0; i < document.styleSheets.length; i++) {
+    if (document.styleSheets[i].href === null) {
+      target_stylesheet = document.styleSheets[i];
+      break;
+    }
+  }
+
+  if (ref) {
+    for (i = 0; i < 10; i++) {
+      generateRandomStyle(i, j);
+    }
+
+    for (i = 0; i < 10; i++) {
+      for (j = 0; j < 10; j++) {
+        generateRandomStyle(i, j); // throw it away.
+      }
+    }
+
+    for (i = 0; i < 10; i++) {
+      var new_rule = generateRandomStyle(i, null);
+      target_stylesheet.insertRule(new_rule, target_stylesheet.cssRules.length);
+    }
+
+    for (i = 0; i < 10; i++) {
+      for (j = 0; j < 10; j++) {
+        var new_rule = generateRandomStyle(i, j);
+        target_stylesheet.insertRule(new_rule, target_stylesheet.cssRules.length);
+      }
+    }
+  } else {
+    for (i = 0; i < 10; i++) {
+      var new_rule = generateRandomStyle(i, null);
+      target_stylesheet.insertRule(new_rule, target_stylesheet.cssRules.length);
+      document.getElementById("_0").getBoundingClientRect(); // force reflow
+    }
+
+    for (i = 0; i < 10; i++) {
+      for (j = 0; j < 10; j++) {
+        var new_rule = generateRandomStyle(i, j);
+        target_stylesheet.insertRule(new_rule, target_stylesheet.cssRules.length);
+        document.getElementById("_0").getBoundingClientRect(); // force reflow
+      }
+    }
+
+                      setTimeout(function() {
+
+    for (i = 0; i < 10; i++) {
+      var new_rule = generateRandomStyle(i, null);
+      target_stylesheet.deleteRule(i);
+      target_stylesheet.insertRule(new_rule, i);
+      document.getElementById("_0").getBoundingClientRect(); // force reflow
+    }
+
+    for (i = 0; i < 10; i++) {
+      for (j = 0; j < 10; j++) {
+        var new_rule = generateRandomStyle(i, j);
+        target_stylesheet.deleteRule(10+i*10+j);
+        target_stylesheet.insertRule(new_rule, 10+i*10+j);
+        document.getElementById("_0").getBoundingClientRect(); // force reflow
+      }
+    }
+
+                      }, 100);
+  }
+
+  // Clear rules:
+  // while (target_stylesheet.cssRules.length != 0) {
+  //   target_stylesheet.deleteRule(0);
+  // }
+
+  //
+  // If not the reference version:
+  //
+  //   Assign each of these 110 elements a random style, force layout, then
+  //   assign a different style.
+  //
+  // If the reference version:
+  //
+  //   Assign the final styles, then force layout.
+  //
+  // Things to fuzz:
+  //
+  //   display, position, float, background-color,
+  //   (width, height depending on position)
+  //   nth child, nth last child,
+  //   sibling combinators (+, ~) adding and removal,
+  //   adding and removing nodes,
+  //   adding/removing pseudo elements,
+  //   changing the display of pseudo elements
+</script>
+</body>
+</html>
